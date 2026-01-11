@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Statistici - Provenance Platform</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 0 20px;
+            background: #f5f5f5;
+        }
+        h1 {
+            color: #333;
+            border-bottom: 3px solid #007bff;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #555;
+            margin-top: 30px;
+            border-bottom: 2px solid #ccc;
+            padding-bottom: 5px;
+        }
+        .nav {
+            margin: 20px 0;
+        }
+        .nav a {
+            margin-right: 15px;
+            padding: 8px 15px;
+            background: #007bff;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+        }
+        .nav a:hover {
+            background: #0056b3;
+        }
+        .stat-box {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .total {
+            font-size: 48px;
+            font-weight: bold;
+            color: #007bff;
+            text-align: center;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        th, td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background: #f8f9fa;
+            font-weight: bold;
+            color: #333;
+        }
+        tr:hover {
+            background: #f8f9fa;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        .sparql-info {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 20px 0;
+        }
+        .sparql-info code {
+            background: #fff;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+        .chart {
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>📊 Statistici Provenance Platform</h1>
+    
+    <div class="nav">
+        <a href="/">← Înapoi la Lista de Opere</a>
+        <a href="/sparql">SPARQL Endpoint</a>
+        <a href="/romanian/">🇷🇴 Patrimoniu Român</a>
+    </div>
+
+    <div id="stats" class="loading">Se încarcă statisticile...</div>
+
+    <script>
+        fetch('/stats/api/')
+            .then(r => r.json())
+            .then(data => {
+                const container = document.getElementById('stats');
+                
+                // Check for error response
+                if (data.error) {
+                    container.innerHTML = `
+                        <div class="stat-box" style="color: red;">
+                            <strong>Eroare la încărcarea statisticilor:</strong><br>
+                            ${data.message || data.error}
+                        </div>
+                    `;
+                    return;
+                }
+                
+                let html = `
+                    <div class="stat-box">
+                        <h2>Total Opere de Artă</h2>
+                        <div class="total">${data.total_artworks}</div>
+                    </div>
+
+                    <div class="stat-box">
+                        <h2>Top 10 Artiști (după număr de opere)</h2>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Artist</th>
+                                    <th>Număr de Opere</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${data.top_creators.map((c, i) => `
+                                    <tr>
+                                        <td>${i + 1}</td>
+                                        <td>${c.creator}</td>
+                                        <td><strong>${c.count}</strong></td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="stat-box">
+                        <h2>Top 10 Muzee</h2>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Muzeu</th>
+                                    <th>Număr de Opere</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${data.top_museums.map((m, i) => `
+                                    <tr>
+                                        <td>${i + 1}</td>
+                                        <td>${m.museum}</td>
+                                        <td><strong>${m.count}</strong></td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="stat-box">
+                        <h2>Top Curente Artistice</h2>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Curent Artistic</th>
+                                    <th>Număr de Opere</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${data.top_movements.map((m, i) => `
+                                    <tr>
+                                        <td>${i + 1}</td>
+                                        <td>${m.movement}</td>
+                                        <td><strong>${m.count}</strong></td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="stat-box">
+                        <h2>Opere pe Secol</h2>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Secol</th>
+                                    <th>Număr de Opere</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${data.by_century.map(c => `
+                                    <tr>
+                                        <td>${c.century}</td>
+                                        <td><strong>${c.count}</strong></td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="stat-box">
+                        <h2>🏛️ Descompunere Muzee</h2>
+                        <p style="color: #666; margin-bottom: 20px;">Distribuția operelor și curențelor artistice pe muzee</p>
+                        ${data.museum_breakdown.map(m => `
+                            <div style="background: #f8f9fa; padding: 15px; margin-bottom: 15px; border-radius: 4px; border-left: 4px solid #007bff;">
+                                <h3 style="margin: 0 0 10px 0; color: #007bff;">
+                                    ${m.museum}
+                                    <span style="color: #666; font-size: 14px; font-weight: normal;">(${m.total_artworks} opere)</span>
+                                </h3>
+                                ${m.top_movements.length > 0 ? `
+                                    <table style="font-size: 14px;">
+                                        <thead style="display: none;"></thead>
+                                        <tbody>
+                                            ${m.top_movements.map(mov => `
+                                                <tr>
+                                                    <td style="padding: 5px 10px;">• ${mov.movement}</td>
+                                                    <td style="padding: 5px 10px; text-align: right;"><strong>${mov.movement_count}</strong></td>
+                                                </tr>
+                                            `).join('')}
+                                        </tbody>
+                                    </table>
+                                ` : `
+                                    <p style="color: #999; margin: 0; font-size: 14px;">Nu sunt date de curent artistic</p>
+                                `}
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+                
+                container.innerHTML = html;
+            })
+            .catch(err => {
+                document.getElementById('stats').innerHTML = `
+                    <div class="stat-box" style="color: red;">
+                        <strong>Eroare la încărcarea statisticilor:</strong><br>
+                        ${err.message}
+                    </div>
+                `;
+            });
+    </script>
+</body>
+</html>

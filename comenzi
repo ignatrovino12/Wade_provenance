@@ -1,0 +1,3 @@
+.\fuseki-server.bat
+
+python manage.py runserver

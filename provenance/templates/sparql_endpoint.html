@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SPARQL Endpoint - Provenance Platform</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 0 20px;
+            background: #f5f5f5;
+        }
+        h1 {
+            color: #333;
+            border-bottom: 3px solid #007bff;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #555;
+            margin-top: 30px;
+        }
+        .nav {
+            margin: 20px 0;
+        }
+        .nav a {
+            margin-right: 15px;
+            padding: 8px 15px;
+            background: #007bff;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+        }
+        .nav a:hover {
+            background: #0056b3;
+        }
+        .query-box {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        textarea {
+            width: 100%;
+            height: 200px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            resize: vertical;
+        }
+        button {
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        button:hover {
+            background: #218838;
+        }
+        .example {
+            background: #e9ecef;
+            padding: 10px;
+            border-left: 4px solid #007bff;
+            margin: 10px 0;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        .example:hover {
+            background: #dee2e6;
+        }
+        .example h3 {
+            margin: 0 0 10px 0;
+            color: #007bff;
+            font-size: 16px;
+        }
+        .example code {
+            display: block;
+            background: white;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            margin-top: 5px;
+        }
+        #results {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: none;
+        }
+        #results pre {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 4px;
+            border-left: 4px solid #dc3545;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            padding: 15px;
+            border-radius: 4px;
+            border-left: 4px solid #28a745;
+            margin-bottom: 15px;
+        }
+        .info {
+            background: #d1ecf1;
+            border: 1px solid #bee5eb;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔗 SPARQL Endpoint</h1>
+    
+    <div class="nav">
+        <a href="/">← Lista Opere</a>
+        <a href="/stats/">📊 Statistici</a>
+        <a href="/romanian/">🇷🇴 Patrimoniu Român</a>
+    </div>
+
+    <div class="info">
+        <strong>Endpoint URL:</strong> <code>/sparql?query=YOUR_SPARQL_QUERY</code><br>
+        <strong>Metode:</strong> GET, POST<br>
+        <strong>Format răspuns:</strong> JSON
+    </div>
+
+    <div class="query-box">
+        <h2>Rulează Query SPARQL</h2>
+        <form id="sparqlForm">
+            <textarea id="queryInput" name="query" placeholder="Introdu query-ul SPARQL aici...">PREFIX rdf: &lt;http://www.w3.org/1999/02/22-rdf-syntax-ns#&gt;
+PREFIX ex: &lt;http://example.org/ontology/&gt;
+
+SELECT ?title ?creator ?date ?museum
+WHERE {
+    ?art rdf:type ex:Artwork .
+    ?art ex:title ?title .
+    ?art ex:creator ?creator .
+    OPTIONAL { ?art ex:date ?date }
+    OPTIONAL { ?art ex:museum ?museum }
+}
+LIMIT 10</textarea>
+            <button type="submit">▶ Execută Query</button>
+        </form>
+    </div>
+
+    <div id="results"></div>
+
+    <h2>📚 Exemple de Query-uri</h2>
+
+    <div class="example" onclick="loadExample(this)">
+        <h3>1. Toate operele (primele 10)</h3>
+        <code>PREFIX rdf: &lt;http://www.w3.org/1999/02/22-rdf-syntax-ns#&gt;
+PREFIX ex: &lt;http://example.org/ontology/&gt;
+
+SELECT ?title ?creator ?date
+WHERE {
+    ?art rdf:type ex:Artwork .
+    ?art ex:title ?title .
+    ?art ex:creator ?creator .
+    OPTIONAL { ?art ex:date ?date }
+}
+LIMIT 10</code>
+    </div>
+
+    <div class="example" onclick="loadExample(this)">
+        <h3>2. Număr de opere per artist</h3>
+        <code>PREFIX rdf: &lt;http://www.w3.org/1999/02/22-rdf-syntax-ns#&gt;
+PREFIX ex: &lt;http://example.org/ontology/&gt;
+
+SELECT ?creator (COUNT(?art) as ?count)
+WHERE {
+    ?art rdf:type ex:Artwork ;
+         ex:creator ?creator .
+}
+GROUP BY ?creator
+ORDER BY DESC(?count)</code>
+    </div>
+
+    <div class="example" onclick="loadExample(this)">
+        <h3>3. Opere dintr-un curent artistic specific</h3>
+        <code>PREFIX rdf: &lt;http://www.w3.org/1999/02/22-rdf-syntax-ns#&gt;
+PREFIX ex: &lt;http://example.org/ontology/&gt;
+
+SELECT ?title ?creator ?movement
+WHERE {
+    ?art rdf:type ex:Artwork ;
+         ex:title ?title ;
+         ex:creator ?creator ;
+         ex:movement ?movement .
+    FILTER(CONTAINS(LCASE(?movement), "baroque"))
+}
+LIMIT 20</code>
+    </div>
+
+    <div class="example" onclick="loadExample(this)">
+        <h3>4. Opere dintr-un muzeu specific</h3>
+        <code>PREFIX rdf: &lt;http://www.w3.org/1999/02/22-rdf-syntax-ns#&gt;
+PREFIX ex: &lt;http://example.org/ontology/&gt;
+
+SELECT ?title ?creator ?date
+WHERE {
+    ?art rdf:type ex:Artwork ;
+         ex:title ?title ;
+         ex:creator ?creator ;
+         ex:museum ?museum .
+    FILTER(CONTAINS(?museum, "Louvre"))
+    OPTIONAL { ?art ex:date ?date }
+}</code>
+    </div>
+
+    <div class="example" onclick="loadExample(this)">
+        <h3>5. Opere din secolul XVII</h3>
+        <code>PREFIX rdf: &lt;http://www.w3.org/1999/02/22-rdf-syntax-ns#&gt;
+PREFIX ex: &lt;http://example.org/ontology/&gt;
+
+SELECT ?title ?creator ?date
+WHERE {
+    ?art rdf:type ex:Artwork ;
+         ex:title ?title ;
+         ex:creator ?creator ;
+         ex:date ?date .
+    FILTER(REGEX(STR(?date), "^16[0-9]{2}"))
+}</code>
+    </div>
+
+    <script>
+        function loadExample(element) {
+            const code = element.querySelector('code').textContent;
+            document.getElementById('queryInput').value = code;
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        document.getElementById('sparqlForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const query = document.getElementById('queryInput').value;
+            const resultsDiv = document.getElementById('results');
+            
+            resultsDiv.style.display = 'block';
+            resultsDiv.innerHTML = '<p>Se execută query-ul...</p>';
+            
+            fetch('/sparql?query=' + encodeURIComponent(query))
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        resultsDiv.innerHTML = `
+                            <div class="error">
+                                <strong>Eroare:</strong> ${data.error}
+                            </div>
+                        `;
+                    } else {
+                        const count = data.results?.bindings?.length || 0;
+                        resultsDiv.innerHTML = `
+                            <div class="success">
+                                ✓ Query executat cu succes! Găsite: ${count} rezultate
+                            </div>
+                            <h3>Rezultate JSON:</h3>
+                            <pre>${JSON.stringify(data, null, 2)}</pre>
+                        `;
+                    }
+                })
+                .catch(err => {
+                    resultsDiv.innerHTML = `
+                        <div class="error">
+                            <strong>Eroare de rețea:</strong> ${err.message}
+                        </div>
+                    `;
+                });
+        });
+    </script>
+</body>
+</html>

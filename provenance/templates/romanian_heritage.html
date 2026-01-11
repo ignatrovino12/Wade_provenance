@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Patrimoniu Cultural Român</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 0 20px;
+            background: #f5f5f5;
+        }
+        h1 {
+            color: #c60c30;
+            border-bottom: 3px solid #fcd116;
+            padding-bottom: 10px;
+        }
+        .nav {
+            margin: 20px 0;
+        }
+        .nav a {
+            margin-right: 15px;
+            padding: 8px 15px;
+            background: #007bff;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+        }
+        .nav a:hover {
+            background: #0056b3;
+        }
+        .info-box {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border-left: 4px solid #c60c30;
+        }
+        .artworks-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .artwork-card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border-left: 4px solid #fcd116;
+        }
+        .artwork-card h3 {
+            margin: 0 0 10px 0;
+            color: #333;
+            font-size: 18px;
+        }
+        .artwork-card p {
+            margin: 5px 0;
+            color: #555;
+            font-size: 14px;
+        }
+        .label {
+            font-weight: bold;
+            color: #c60c30;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 4px;
+            border-left: 4px solid #dc3545;
+        }
+        .stats-box {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .stat {
+            text-align: center;
+            padding: 20px;
+        }
+        .stat-number {
+            font-size: 32px;
+            font-weight: bold;
+            color: #c60c30;
+        }
+        .stat-label {
+            color: #666;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🇷🇴 Patrimoniu Cultural Român</h1>
+    
+    <div class="nav">
+        <a href="/">← Lista Generale</a>
+        <a href="/stats/">📊 Statistici Generale</a>
+    </div>
+
+    <div class="info-box">
+        <h2>Asupra patrimoniului</h2>
+        <p>
+            Această pagină prezintă opere de artă din patrimoniul cultural român, incluzând:
+        </p>
+        <ul>
+            <li>Opere din România (locație)</li>
+            <li>Opere de artiști români (naționalitate)</li>
+            <li>Artiști născuți în România</li>
+        </ul>
+        <p>
+            Datele sunt din <strong>Wikidata</strong> și sunt actualizate periodic.
+            Pentru o bază de date mai completă a patrimoniului, consultă 
+            <a href="https://data.gov.ro/dataset?tags=patrimoniu+cultural" target="_blank">data.gov.ro</a>
+        </p>
+    </div>
+
+    <div class="stats-box">
+        <div id="stats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 20px;">
+            <div class="loading">Se încarcă...</div>
+        </div>
+    </div>
+
+    <h2>Opere Românești</h2>
+    <div id="artworks" class="loading">Se încarcă...</div>
+
+    <script>
+        // Load stats
+        fetch('/romanian/api/')
+            .then(r => r.json())
+            .then(data => {
+                const total = data.length;
+                const creators = new Set(data.map(a => a.creator)).size;
+                const museums = new Set(data.map(a => a.museum)).size;
+                
+                document.getElementById('stats').innerHTML = `
+                    <div class="stat">
+                        <div class="stat-number">${total}</div>
+                        <div class="stat-label">Opere</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-number">${creators}</div>
+                        <div class="stat-label">Artiști</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-number">${museums}</div>
+                        <div class="stat-label">Muzee</div>
+                    </div>
+                `;
+                
+                // Load artworks
+                document.getElementById('artworks').innerHTML = '';
+                if (data.length === 0) {
+                    document.getElementById('artworks').innerHTML = '<p class="error">Nu au fost găsite opere românești în baza de date.</p>';
+                    return;
+                }
+                
+                const grid = document.createElement('div');
+                grid.className = 'artworks-grid';
+                
+                data.forEach(artwork => {
+                    const card = document.createElement('div');
+                    card.className = 'artwork-card';
+                    const title = artwork.title || `Operă de ${artwork.creator || 'Autor necunoscut'}`;
+                    card.innerHTML = `
+                        <h3>${title}</h3>
+                        <p><span class="label">Autor:</span> ${artwork.creator}</p>
+                        <p><span class="label">An:</span> ${artwork.date || 'Nedatat'}</p>
+                        <p><span class="label">Muzeu:</span> ${artwork.museum || 'N/A'}</p>
+                        <p><span class="label">Curent artistic:</span> ${artwork.movement || 'N/A'}</p>
+                        ${artwork.dbpedia ? `
+                            ${artwork.dbpedia.birthDate ? `<p><span class="label">Naștere:</span> ${artwork.dbpedia.birthDate} în ${artwork.dbpedia.birthPlace || 'N/A'}</p>` : ''}
+                            ${artwork.dbpedia.nationality ? `<p><span class="label">Naționalitate:</span> ${artwork.dbpedia.nationality}</p>` : ''}
+                            ${artwork.dbpedia.movement ? `<p><span class="label">Mișcare artistică:</span> ${artwork.dbpedia.movement}</p>` : ''}
+                        ` : ''}
+                    `;
+                    grid.appendChild(card);
+                });
+                
+                document.getElementById('artworks').innerHTML = '';
+                document.getElementById('artworks').appendChild(grid);
+            })
+            .catch(err => {
+                document.getElementById('artworks').innerHTML = `<div class="error">Eroare: ${err.message}</div>`;
+            });
+    </script>
+</body>
+</html>
