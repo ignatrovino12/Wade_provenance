@@ -142,7 +142,7 @@
             .then(data => {
                 const total = data.length;
                 const creators = new Set(data.map(a => a.creator)).size;
-                const museums = new Set(data.map(a => a.museum)).size;
+                const museums = new Set(data.flatMap(a => a.museums || [])).size;
                 
                 document.getElementById('stats').innerHTML = `
                     <div class="stat">
@@ -173,17 +173,25 @@
                     const card = document.createElement('div');
                     card.className = 'artwork-card';
                     const title = artwork.title || `Operă de ${artwork.creator || 'Autor necunoscut'}`;
+                    
+                    // Format arrays as comma-separated lists
+                    const creators = artwork.creators && artwork.creators.length > 0 ? artwork.creators.join(', ') : artwork.creator;
+                    const museums = artwork.museums && artwork.museums.length > 0 ? artwork.museums.join(', ') : 'N/A';
+                    const movements = artwork.movements && artwork.movements.length > 0 ? artwork.movements.join(', ') : 'N/A';
+                    const creatorMovements = artwork.creator_movements && artwork.creator_movements.length > 0 ? artwork.creator_movements.join(', ') : 'N/A';
+                    const birthDates = artwork.birth_dates && artwork.birth_dates.length > 0 ? artwork.birth_dates.join(', ') : 'N/A';
+                    const birthPlaces = artwork.birth_places && artwork.birth_places.length > 0 ? artwork.birth_places.join(', ') : 'N/A';
+                    const nationalities = artwork.nationalities && artwork.nationalities.length > 0 ? artwork.nationalities.join(', ') : 'N/A';
+                    
                     card.innerHTML = `
                         <h3>${title}</h3>
-                        <p><span class="label">Autor:</span> ${artwork.creator}</p>
+                        <p><span class="label">Autor:</span> ${creators}</p>
                         <p><span class="label">An:</span> ${artwork.date || 'Nedatat'}</p>
-                        <p><span class="label">Muzeu:</span> ${artwork.museum || 'N/A'}</p>
-                        <p><span class="label">Curent artistic:</span> ${artwork.movement || 'N/A'}</p>
-                        ${artwork.dbpedia ? `
-                            ${artwork.dbpedia.birthDate ? `<p><span class="label">Naștere:</span> ${artwork.dbpedia.birthDate} în ${artwork.dbpedia.birthPlace || 'N/A'}</p>` : ''}
-                            ${artwork.dbpedia.nationality ? `<p><span class="label">Naționalitate:</span> ${artwork.dbpedia.nationality}</p>` : ''}
-                            ${artwork.dbpedia.movement ? `<p><span class="label">Mișcare artistică:</span> ${artwork.dbpedia.movement}</p>` : ''}
-                        ` : ''}
+                        <p><span class="label">Muzeu:</span> ${museums}</p>
+                        <p><span class="label">Curent artistic:</span> ${movements}</p>
+                        <p><span class="label">Naștere:</span> ${birthDates} în ${birthPlaces}</p>
+                        <p><span class="label">Naționalitate:</span> ${nationalities}</p>
+                        <p><span class="label">Mișcare artistică (creator):</span> ${creatorMovements}</p>
                     `;
                     grid.appendChild(card);
                 });

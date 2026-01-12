@@ -30,7 +30,7 @@ def artworks_api(request):
     count_results = sparql.query().convert()
     total = int(count_results["results"]["bindings"][0].get("count", {}).get("value", 0))
     
-    # Then fetch the page
+    # Then fetch ALL data (not paginated) to deduplicate
     sparql.setQuery(f"""
         PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
         PREFIX ex: <http://example.org/ontology/>
@@ -48,43 +48,90 @@ def artworks_api(request):
             OPTIONAL {{ ?art ex:museum ?museum }}
             BIND(COALESCE(?creator, ?creatorName, "Necunoscut") AS ?creatorFinal)
         }}
-        LIMIT {per_page}
-        OFFSET {offset}
     """)
     sparql.setReturnFormat(JSON)
     results = sparql.query().convert()
 
-    data = []
+    # Deduplicate by (title, date) - merge multi-valued properties
+    deduped_dict = {}
     for r in results["results"]["bindings"]:
-        title = r.get("title", {}).get("value")
-        creator = r.get("creatorFinal", {}).get("value")
+        title = r.get("title", {}).get("value") or "N/A"
+        creator = r.get("creatorFinal", {}).get("value") or "Necunoscut"
         date = r.get("date", {}).get("value")
         museum = r.get("museum", {}).get("value")
         movement = r.get("movement", {}).get("value")
         creator_movement = r.get("creatorMovement", {}).get("value")
-
-        item = {
-            "title": title or "N/A",
-            "creator": creator or "Necunoscut",
-            "date": date or None,
-            "museum": museum or None,
-            "movement": movement or None,
-        }
-
-        # Only use artist details from our dataset (no DBpedia fallback for performance)
-        birthDateVal = r.get("birthDate", {}).get("value")
-        birthPlaceVal = r.get("birthPlace", {}).get("value")
-        nationalityVal = r.get("nationality", {}).get("value")
-
-        if birthDateVal or birthPlaceVal or nationalityVal or creator_movement:
-            item["dbpedia"] = {
-                "birthDate": birthDateVal or None,
-                "birthPlace": birthPlaceVal or None,
-                "nationality": nationalityVal or None,
-                "movement": creator_movement or None,
+        birthDate = r.get("birthDate", {}).get("value")
+        birthPlace = r.get("birthPlace", {}).get("value")
+        nationality = r.get("nationality", {}).get("value")
+        
+        key = (title, date)
+        
+        if key not in deduped_dict:
+            deduped_dict[key] = {
+                "title": title,
+                "creators": {creator} if creator and creator != "Necunoscut" else set(),
+                "date": date,
+                "museums": {museum} if museum else set(),
+                "movements": {movement} if movement else set(),
+                "creator_movements": {creator_movement} if creator_movement else set(),
+                "birth_dates": {birthDate} if birthDate else set(),
+                "birth_places": {birthPlace} if birthPlace else set(),
+                "nationalities": {nationality} if nationality else set(),
             }
-
-        data.append(item)
+        else:
+            # Merge multi-valued fields
+            item = deduped_dict[key]
+            if creator and creator != "Necunoscut":
+                item["creators"].add(creator)
+            if museum:
+                item["museums"].add(museum)
+            if movement:
+                item["movements"].add(movement)
+            if creator_movement:
+                item["creator_movements"].add(creator_movement)
+            if birthDate:
+                item["birth_dates"].add(birthDate)
+            if birthPlace:
+                item["birth_places"].add(birthPlace)
+            if nationality:
+                item["nationalities"].add(nationality)
+    
+    # Apply pagination on deduplicated data
+    deduped_list = list(deduped_dict.values())
+    total = len(deduped_list)
+    paginated_data = deduped_list[offset:offset + per_page]
+    
+    # Convert sets to sorted lists for JSON serialization
+    data = []
+    for item in paginated_data:
+        creators_list = sorted([c for c in item["creators"] if c])
+        processed_item = {
+            "title": item["title"],
+            "creators": creators_list,
+            "creator": creators_list[0] if creators_list else "Necunoscut",
+            "date": item["date"],
+            "museums": sorted([m for m in item["museums"] if m]),
+            "movements": sorted([m for m in item["movements"] if m]),
+            "creator_movements": sorted([m for m in item["creator_movements"] if m]),
+            "birth_dates": sorted([bd for bd in item["birth_dates"] if bd]),
+            "birth_places": sorted([bp for bp in item["birth_places"] if bp]),
+            "nationalities": sorted([n for n in item["nationalities"] if n]),
+        }
+        
+        # Build backward-compatible structure
+        processed_item["museum"] = processed_item["museums"][0] if processed_item["museums"] else None
+        processed_item["movement"] = processed_item["movements"][0] if processed_item["movements"] else None
+        
+        if any([processed_item["birth_dates"], processed_item["birth_places"], processed_item["nationalities"], processed_item["creator_movements"]]):
+            processed_item["dbpedia"] = {
+                "birthDate": processed_item["birth_dates"][0] if processed_item["birth_dates"] else None,
+                "birthPlace": processed_item["birth_places"][0] if processed_item["birth_places"] else None,
+                "nationality": processed_item["nationalities"][0] if processed_item["nationalities"] else None,
+                "movement": processed_item["creator_movements"][0] if processed_item["creator_movements"] else None,
+            }
+        
+        data.append(processed_item)
 
     return JsonResponse({
         "items": data,
@@ -288,13 +335,13 @@ def romanian_heritage_page(request):
 
 
 def romanian_heritage_api(request):
-    """Romanian heritage artworks API - ONLY from data.gov.ro"""
+    """Romanian heritage artworks API"""
     # Query Fuseki for Romanian artworks (marked with heritage=true and source=data.gov.ro)
     sparql = SPARQLWrapper(settings.FUSEKI_ENDPOINT)
     sparql.setQuery("""
         PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
         PREFIX ex: <http://example.org/ontology/>
-        SELECT ?title ?creator ?date ?museum ?movement WHERE {
+        SELECT ?title ?creator ?date ?museum ?movement ?birthDate ?birthPlace ?nationality ?creatorMovement WHERE {
             ?art rdf:type ex:Artwork .
             ?art ex:creator ?creator .
             ?art ex:heritage "true" .
@@ -303,36 +350,90 @@ def romanian_heritage_api(request):
             OPTIONAL { ?art ex:date ?date }
             OPTIONAL { ?art ex:museum ?museum }
             OPTIONAL { ?art ex:movement ?movement }
+            OPTIONAL { ?art ex:createdBy ?artist . ?artist ex:birthDate ?birthDate }
+            OPTIONAL { ?art ex:createdBy ?artist . ?artist ex:birthPlace ?birthPlace }
+            OPTIONAL { ?art ex:createdBy ?artist . ?artist ex:nationality ?nationality }
+            OPTIONAL { ?art ex:createdBy ?artist . ?artist ex:movement ?creatorMovement }
         }
     """)
     sparql.setReturnFormat(JSON)
     results = sparql.query().convert()
 
-    data = []
+    # Deduplicate by (title, date) - same artwork regardless of creator
+    # Merge ALL multi-valued properties on same artwork
+    deduped_dict = {}
     for r in results["results"]["bindings"]:
-        title = r.get("title", {}).get("value")
-        creator = r.get("creator", {}).get("value")
+        title = r.get("title", {}).get("value") or "N/A"
+        creator = r.get("creator", {}).get("value") or "Necunoscut"
         date = r.get("date", {}).get("value")
         museum = r.get("museum", {}).get("value")
         movement = r.get("movement", {}).get("value")
-
-        item = {
-            "title": title or "N/A",
-            "creator": creator or "Necunoscut",
-            "date": date or None,
-            "museum": museum or None,
-            "movement": movement or None,
+        creator_movement = r.get("creatorMovement", {}).get("value")
+        birthDate = r.get("birthDate", {}).get("value")
+        birthPlace = r.get("birthPlace", {}).get("value")
+        nationality = r.get("nationality", {}).get("value")
+        
+        key = (title, date)
+        
+        if key not in deduped_dict:
+            deduped_dict[key] = {
+                "title": title,
+                "creators": {creator} if creator and creator != "Necunoscut" else set(),
+                "date": date,
+                "museums": {museum} if museum else set(),
+                "movements": {movement} if movement else set(),
+                "creator_movements": {creator_movement} if creator_movement else set(),
+                "birth_dates": {birthDate} if birthDate else set(),
+                "birth_places": {birthPlace} if birthPlace else set(),
+                "nationalities": {nationality} if nationality else set(),
+            }
+        else:
+            # Merge multi-valued fields
+            item = deduped_dict[key]
+            if creator and creator != "Necunoscut":
+                item["creators"].add(creator)
+            if museum:
+                item["museums"].add(museum)
+            if movement:
+                item["movements"].add(movement)
+            if creator_movement:
+                item["creator_movements"].add(creator_movement)
+            if birthDate:
+                item["birth_dates"].add(birthDate)
+            if birthPlace:
+                item["birth_places"].add(birthPlace)
+            if nationality:
+                item["nationalities"].add(nationality)
+    
+    # Convert sets to sorted lists and build response
+    data = []
+    for item in deduped_dict.values():
+        creators_list = sorted([c for c in item["creators"] if c])
+        processed_item = {
+            "title": item["title"],
+            "creators": creators_list,
+            "creator": creators_list[0] if creators_list else "Necunoscut",
+            "date": item["date"],
+            "museums": sorted([m for m in item["museums"] if m]),
+            "movements": sorted([m for m in item["movements"] if m]),
+            "creator_movements": sorted([m for m in item["creator_movements"] if m]),
+            "birth_dates": sorted([bd for bd in item["birth_dates"] if bd]),
+            "birth_places": sorted([bp for bp in item["birth_places"] if bp]),
+            "nationalities": sorted([n for n in item["nationalities"] if n]),
         }
+        
+        # Build backward-compatible structure
+        processed_item["museum"] = processed_item["museums"][0] if processed_item["museums"] else None
+        processed_item["movement"] = processed_item["movements"][0] if processed_item["movements"] else None
+        
+        if any([processed_item["birth_dates"], processed_item["birth_places"], processed_item["nationalities"], processed_item["creator_movements"]]):
+            processed_item["dbpedia"] = {
+                "birthDate": processed_item["birth_dates"][0] if processed_item["birth_dates"] else None,
+                "birthPlace": processed_item["birth_places"][0] if processed_item["birth_places"] else None,
+                "nationality": processed_item["nationalities"][0] if processed_item["nationalities"] else None,
+                "movement": processed_item["creator_movements"][0] if processed_item["creator_movements"] else None,
+            }
+        
+        data.append(processed_item)
 
-        data.append(item)
-
-    # Deduplicate
-    seen = {}
-    deduped = []
-    for item in data:
-        key = (item["title"], item["creator"], item["date"])
-        if key not in seen:
-            seen[key] = item
-            deduped.append(item)
-
-    return JsonResponse(deduped, safe=False)
+    return JsonResponse(data, safe=False)

@@ -247,21 +247,26 @@ def get_paintings(limit: int = 10, total: int = 100):
     if len(g):
         push_graph_to_fuseki(g)
 
-    # Deduplicate by (title, creator, date) - most reliable for display
+    # Deduplicate by (title, date) - same artwork regardless of creator
     # Merge ALL multi-valued properties on same artwork
     seen = {}
     for item in data:
-        key = (item["title"], item["creator"], item["date"])
+        key = (item["title"], item["date"])
         if key not in seen:
             # First occurrence: initialize sets for multi-valued fields
+            item["creators"] = {item["creator"]} if item["creator"] and item["creator"] != "Necunoscut" else set()
             item["movements"] = {item["movement"]} if item["movement"] else set()
             item["museums"] = {item["museum"]} if item["museum"] else set()
             item["creator_movements"] = {item["dbpedia"]["movement"]} if item["dbpedia"]["movement"] else set()
             item["nationalities"] = {item["dbpedia"]["nationality"]} if item["dbpedia"]["nationality"] else set()
+            item["birth_dates"] = {item["dbpedia"]["birthDate"]} if item["dbpedia"]["birthDate"] else set()
+            item["birth_places"] = {item["dbpedia"]["birthPlace"]} if item["dbpedia"]["birthPlace"] else set()
             seen[key] = item
         else:
             # Duplicate: merge all multi-valued fields
             existing = seen[key]
+            if item["creator"] and item["creator"] != "Necunoscut":
+                existing["creators"].add(item["creator"])
             if item["movement"]:
                 existing["movements"].add(item["movement"])
             if item["museum"]:
@@ -270,6 +275,10 @@ def get_paintings(limit: int = 10, total: int = 100):
                 existing["creator_movements"].add(item["dbpedia"]["movement"])
             if item["dbpedia"]["nationality"]:
                 existing["nationalities"].add(item["dbpedia"]["nationality"])
+            if item["dbpedia"]["birthDate"]:
+                existing["birth_dates"].add(item["dbpedia"]["birthDate"])
+            if item["dbpedia"]["birthPlace"]:
+                existing["birth_places"].add(item["dbpedia"]["birthPlace"])
 
     deduped_data = list(seen.values())
     print(f"[WIKIDATA] Deduplicated: {len(data)} raw results → {len(deduped_data)} unique artworks")
@@ -442,15 +451,36 @@ def get_romanian_artworks(limit: int = 10, total: int = 100):
             }
         })
 
-    # Deduplicate
+    # Deduplicate by (title, creator, date) - merge all multi-valued properties
     seen = {}
-    deduped_data = []
     for item in data:
         key = (item["title"], item["creator"], item["date"])
         if key not in seen:
+            # First occurrence: initialize sets for multi-valued fields
+            item["movements"] = {item["movement"]} if item["movement"] else set()
+            item["museums"] = {item["museum"]} if item["museum"] else set()
+            item["creator_movements"] = {item["dbpedia"]["movement"]} if item["dbpedia"]["movement"] else set()
+            item["nationalities"] = {item["dbpedia"]["nationality"]} if item["dbpedia"]["nationality"] else set()
+            item["birth_dates"] = {item["dbpedia"]["birthDate"]} if item["dbpedia"]["birthDate"] else set()
+            item["birth_places"] = {item["dbpedia"]["birthPlace"]} if item["dbpedia"]["birthPlace"] else set()
             seen[key] = item
-            deduped_data.append(item)
+        else:
+            # Duplicate: merge all multi-valued fields
+            existing = seen[key]
+            if item["movement"]:
+                existing["movements"].add(item["movement"])
+            if item["museum"]:
+                existing["museums"].add(item["museum"])
+            if item["dbpedia"]["movement"]:
+                existing["creator_movements"].add(item["dbpedia"]["movement"])
+            if item["dbpedia"]["nationality"]:
+                existing["nationalities"].add(item["dbpedia"]["nationality"])
+            if item["dbpedia"]["birthDate"]:
+                existing["birth_dates"].add(item["dbpedia"]["birthDate"])
+            if item["dbpedia"]["birthPlace"]:
+                existing["birth_places"].add(item["dbpedia"]["birthPlace"])
 
+    deduped_data = list(seen.values())
     return deduped_data
 
 
