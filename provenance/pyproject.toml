@@ -1,0 +1,69 @@
+[tool.poetry]
+name = "wade-provenance"
+version = "0.1.0"
+description = "WADE Project - Art Provenance and Cultural Heritage Management with Getty Vocabularies Integration"
+authors = ["Your Name <you@example.com>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+
+# Web Framework
+Django = "^6.0.1"
+djangorestframework = "^3.16.1"
+django-cors-headers = "^4.3.0"
+
+# RDF & Semantic Web
+rdflib = "^7.5.0"
+SPARQLWrapper = "^2.0.0"
+
+# HTTP & Data Processing
+requests = "^2.32.3"
+
+# Database (Optional - for future enhancements)
+# psycopg2-binary = "^2.9.9"  # PostgreSQL adapter
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.3"
+pytest-django = "^4.7.0"
+black = "^23.12.1"
+flake8 = "^6.1.0"
+isort = "^5.13.2"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+# Django management command shortcut (optional)
+# manage = "provenance.manage:main"
+
+[tool.black]
+line-length = 100
+target-version = ['py310']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 100
+skip_glob = ["*/migrations/*", "*/venv/*"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "provenance.settings"
+python_files = ["tests.py", "test_*.py", "*_tests.py"]
+addopts = "--strict-markers --tb=short"
+testpaths = ["artworks"]

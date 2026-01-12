@@ -1,0 +1,18 @@
+# Django & Web Framework
+Django==6.0.1
+djangorestframework==3.16.1
+django-cors-headers==4.3.0
+
+# RDF & Semantic Web
+rdflib==7.5.0
+SPARQLWrapper==2.0.0
+
+# HTTP & Data Processing
+requests==2.32.3
+
+# Development Tools (optional)
+pytest==7.4.3
+pytest-django==4.7.0
+black==23.12.1
+flake8==6.1.0
+isort==5.13.2
