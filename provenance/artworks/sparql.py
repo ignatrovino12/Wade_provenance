@@ -23,7 +23,6 @@ def get_paintings(limit: int = 10, total: int = 100):
     sparql = _make_wikidata_client()
     all_bindings = []
 
-    # Paginate through results with simple offset (fast)
     for offset in range(0, total, limit):
         sparql.setQuery(f"""
             PREFIX wd: <http://www.wikidata.org/entity/>
@@ -71,7 +70,6 @@ def get_paintings(limit: int = 10, total: int = 100):
         print("[WIKIDATA FAIL] No results; returning empty list")
         return []
 
-    # Now fetch labels for items and creators
     item_uris = set()
     creator_uris = set()
     place_uris = set()
@@ -121,13 +119,11 @@ def get_paintings(limit: int = 10, total: int = 100):
             label_result = label_client.query().convert()
             if label_result["results"]["bindings"]:
                 label_val = label_result["results"]["bindings"][0]["label"]["value"]
-                if len(label_val) < 50:  # reject very long hashes
+                if len(label_val) < 50:
                     labels[uri] = label_val
-                # else: skip hash values entirely (don't store them)
-            # else: skip - no label found, don't store fallback hash
+
         except Exception as e:
             print(f"[LABEL FETCH] failed for {uri}: {e}")
-            # Don't store fallback; skip this URI
     
     g = Graph()
     g.bind("ex", EX)
@@ -157,19 +153,14 @@ def get_paintings(limit: int = 10, total: int = 100):
         creator_movement = labels.get(creator_movement_uri) if creator_movement_uri else None
         nationality = labels.get(nationality_uri) if nationality_uri else None
 
-        # Skip items with "Unknown" title (label fetch failed) - use fallback
         if title == "Unknown":
-            # Create fallback title from creator + date, or Wikidata item ID
             if author and author != "Necunoscut":
                 title = f"{author} artwork" if not date else f"{author} ({date})"
             else:
-                # Fallback to Wikidata item ID (e.g., Q12345)
                 title = item_uri.split("/")[-1] if item_uri else "Unknown_item"
                 if title == "Unknown_item":
-                    # Skip entirely if no useful info
                     continue
 
-        # RDF resources
         art_uri = URIRef(EX[title.replace(" ", "_")])
         artist_uri = URIRef(EX[author.replace(" ", "_")])
 
@@ -207,7 +198,6 @@ def get_paintings(limit: int = 10, total: int = 100):
             g.add((artist_uri, EX.movement, Literal(creator_movement, datatype=XSD.string)))
             triple_count += 1
 
-        # Push to Fuseki when batch reaches 50 triples
         if triple_count >= batch_size:
             if len(g):
                 push_graph_to_fuseki(g)
@@ -215,7 +205,6 @@ def get_paintings(limit: int = 10, total: int = 100):
             g.bind("ex", EX)
             triple_count = 0
 
-        # Check if artist is cached; if so, use cached data
         birthDateVal = birthDate
         birthPlaceVal = birthPlace
         nationalityVal = nationality
@@ -243,17 +232,14 @@ def get_paintings(limit: int = 10, total: int = 100):
             }
         })
 
-    # Push remaining triples
     if len(g):
         push_graph_to_fuseki(g)
 
-    # Deduplicate by (title, date) - same artwork regardless of creator
-    # Merge ALL multi-valued properties on same artwork
+
     seen = {}
     for item in data:
         key = (item["title"], item["date"])
         if key not in seen:
-            # First occurrence: initialize sets for multi-valued fields
             item["creators"] = {item["creator"]} if item["creator"] and item["creator"] != "Necunoscut" else set()
             item["movements"] = {item["movement"]} if item["movement"] else set()
             item["museums"] = {item["museum"]} if item["museum"] else set()
@@ -263,7 +249,6 @@ def get_paintings(limit: int = 10, total: int = 100):
             item["birth_places"] = {item["dbpedia"]["birthPlace"]} if item["dbpedia"]["birthPlace"] else set()
             seen[key] = item
         else:
-            # Duplicate: merge all multi-valued fields
             existing = seen[key]
             if item["creator"] and item["creator"] != "Necunoscut":
                 existing["creators"].add(item["creator"])
@@ -293,7 +278,6 @@ def push_graph_to_fuseki(graph: Graph):
     for attempt in range(3):
         try:
             sparql = SPARQLWrapper(update_endpoint)
-            # No timeout for Fuseki — wait as long as needed
             sparql.setMethod(POST)
             sparql.setQuery("""
                 INSERT DATA { %s }
@@ -308,12 +292,10 @@ def push_graph_to_fuseki(graph: Graph):
             time.sleep(wait_time)
 
 def get_romanian_artworks(limit: int = 10, total: int = 100):
-    """Fetch artworks from Romania (P17=Q218) or by Romanian creators (P27=Q218)"""
     sparql = _make_wikidata_client()
     all_bindings = []
 
     for offset in range(0, total, limit):
-        # Query for: paintings from Romania OR by Romanian creators
         sparql.setQuery(f"""
             PREFIX wd: <http://www.wikidata.org/entity/>
             PREFIX wdt: <http://www.wikidata.org/prop/direct/>
@@ -358,7 +340,6 @@ def get_romanian_artworks(limit: int = 10, total: int = 100):
         if results:
             all_bindings.extend(results["results"]["bindings"])
 
-    # Rest is same as get_paintings - label fetching, RDF building, deduplication
     item_uris = set()
     creator_uris = set()
     place_uris = set()
@@ -451,12 +432,10 @@ def get_romanian_artworks(limit: int = 10, total: int = 100):
             }
         })
 
-    # Deduplicate by (title, creator, date) - merge all multi-valued properties
     seen = {}
     for item in data:
         key = (item["title"], item["creator"], item["date"])
         if key not in seen:
-            # First occurrence: initialize sets for multi-valued fields
             item["movements"] = {item["movement"]} if item["movement"] else set()
             item["museums"] = {item["museum"]} if item["museum"] else set()
             item["creator_movements"] = {item["dbpedia"]["movement"]} if item["dbpedia"]["movement"] else set()
@@ -465,7 +444,6 @@ def get_romanian_artworks(limit: int = 10, total: int = 100):
             item["birth_places"] = {item["dbpedia"]["birthPlace"]} if item["dbpedia"]["birthPlace"] else set()
             seen[key] = item
         else:
-            # Duplicate: merge all multi-valued fields
             existing = seen[key]
             if item["movement"]:
                 existing["movements"].add(item["movement"])

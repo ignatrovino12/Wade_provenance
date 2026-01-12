@@ -24,7 +24,6 @@ class Artwork(models.Model):
         return self.title
 
 class GettyULAN(models.Model):
-    """Cache for Getty ULAN (Union List of Artist Names) lookups"""
     name = models.CharField(max_length=255, unique=True, db_index=True)
     ulan_id = models.CharField(max_length=50, null=True, blank=True)
     ulan_url = models.URLField(null=True, blank=True)
@@ -35,7 +34,6 @@ class GettyULAN(models.Model):
         return f"{self.name} ({self.ulan_id})"
 
 class GettyAAT(models.Model):
-    """Cache for Getty AAT (Art & Architecture Thesaurus) lookups"""
     term = models.CharField(max_length=255, unique=True, db_index=True)
     aat_id = models.CharField(max_length=50, null=True, blank=True)
     aat_url = models.URLField(null=True, blank=True)

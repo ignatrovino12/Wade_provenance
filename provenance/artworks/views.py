@@ -30,7 +30,6 @@ def artworks_api(request):
     count_results = sparql.query().convert()
     total = int(count_results["results"]["bindings"][0].get("count", {}).get("value", 0))
     
-    # Then fetch ALL data (not paginated) to deduplicate
     sparql.setQuery(f"""
         PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
         PREFIX ex: <http://example.org/ontology/>
@@ -52,7 +51,6 @@ def artworks_api(request):
     sparql.setReturnFormat(JSON)
     results = sparql.query().convert()
 
-    # Deduplicate by (title, date) - merge multi-valued properties
     deduped_dict = {}
     for r in results["results"]["bindings"]:
         title = r.get("title", {}).get("value") or "N/A"
@@ -80,7 +78,6 @@ def artworks_api(request):
                 "nationalities": {nationality} if nationality else set(),
             }
         else:
-            # Merge multi-valued fields
             item = deduped_dict[key]
             if creator and creator != "Necunoscut":
                 item["creators"].add(creator)
@@ -97,12 +94,10 @@ def artworks_api(request):
             if nationality:
                 item["nationalities"].add(nationality)
     
-    # Apply pagination on deduplicated data
     deduped_list = list(deduped_dict.values())
     total = len(deduped_list)
     paginated_data = deduped_list[offset:offset + per_page]
     
-    # Convert sets to sorted lists for JSON serialization
     data = []
     for item in paginated_data:
         creators_list = sorted([c for c in item["creators"] if c])
@@ -119,7 +114,6 @@ def artworks_api(request):
             "nationalities": sorted([n for n in item["nationalities"] if n]),
         }
         
-        # Build backward-compatible structure
         processed_item["museum"] = processed_item["museums"][0] if processed_item["museums"] else None
         processed_item["movement"] = processed_item["movements"][0] if processed_item["movements"] else None
         
@@ -143,7 +137,6 @@ def artworks_api(request):
 
 
 def sparql_endpoint(request):
-    """Public SPARQL endpoint - accepts GET/POST with 'query' parameter"""
     if request.method == 'GET':
         query = request.GET.get('query', '')
     elif request.method == 'POST':
@@ -152,7 +145,6 @@ def sparql_endpoint(request):
         return JsonResponse({"error": "Method not allowed"}, status=405)
     
     if not query:
-        # Return HTML form if no query provided
         return render(request, "sparql_endpoint.html")
     
     try:
@@ -166,12 +158,10 @@ def sparql_endpoint(request):
 
 
 def statistics_page(request):
-    """Statistics page with visualizations"""
     return render(request, "statistics.html")
 
 
 def statistics_api(request):
-    """Pre-computed statistics about artworks"""
     try:
         sparql = SPARQLWrapper(settings.FUSEKI_ENDPOINT)
         
@@ -284,13 +274,11 @@ def statistics_api(request):
             for b in result["results"]["bindings"]
         ]
         
-        # For each museum, get top movements
         museum_breakdown = []
         for museum_data in museums:
             museum_name = museum_data["museum"]
             museum_total = museum_data["count"]
             
-            # Query movements for this museum (excluding empty movements and "None")
             sparql.setQuery(f"""
                 PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
                 PREFIX ex: <http://example.org/ontology/>
@@ -330,13 +318,10 @@ def statistics_api(request):
         }, status=500)
 
 def romanian_heritage_page(request):
-    """Romanian heritage artworks page"""
     return render(request, "romanian_heritage.html")
 
 
 def romanian_heritage_api(request):
-    """Romanian heritage artworks API"""
-    # Query Fuseki for Romanian artworks (marked with heritage=true and source=data.gov.ro)
     sparql = SPARQLWrapper(settings.FUSEKI_ENDPOINT)
     sparql.setQuery("""
         PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
@@ -359,8 +344,6 @@ def romanian_heritage_api(request):
     sparql.setReturnFormat(JSON)
     results = sparql.query().convert()
 
-    # Deduplicate by (title, date) - same artwork regardless of creator
-    # Merge ALL multi-valued properties on same artwork
     deduped_dict = {}
     for r in results["results"]["bindings"]:
         title = r.get("title", {}).get("value") or "N/A"
@@ -388,7 +371,6 @@ def romanian_heritage_api(request):
                 "nationalities": {nationality} if nationality else set(),
             }
         else:
-            # Merge multi-valued fields
             item = deduped_dict[key]
             if creator and creator != "Necunoscut":
                 item["creators"].add(creator)
@@ -405,7 +387,6 @@ def romanian_heritage_api(request):
             if nationality:
                 item["nationalities"].add(nationality)
     
-    # Convert sets to sorted lists and build response
     data = []
     for item in deduped_dict.values():
         creators_list = sorted([c for c in item["creators"] if c])
@@ -422,7 +403,6 @@ def romanian_heritage_api(request):
             "nationalities": sorted([n for n in item["nationalities"] if n]),
         }
         
-        # Build backward-compatible structure
         processed_item["museum"] = processed_item["museums"][0] if processed_item["museums"] else None
         processed_item["movement"] = processed_item["movements"][0] if processed_item["movements"] else None
         
@@ -440,28 +420,16 @@ def romanian_heritage_api(request):
 
 
 def getty_statistics_page(request):
-    """
-    Render Getty Vocabularies statistics page
-    """
+
     return render(request, "getty_statistics.html")
 
 
 def getty_statistics_api(request):
-    """
-    API endpoint for Getty Vocabularies statistics
-    Returns: {
-        total_artworks,
-        getty_aat_artworks,
-        getty_ulan_artists,
-        top_getty_movements: [{movement, aat_id, aat_url, count}],
-        top_getty_artists: [{artist, ulan_id, ulan_url, count}]
-    }
-    """
+
     sparql = SPARQLWrapper(settings.FUSEKI_ENDPOINT)
     sparql.setReturnFormat(JSON)
     
     try:
-        # Get total artworks count
         sparql.setQuery("""
             PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
             PREFIX ex: <http://example.org/ontology/>
@@ -472,7 +440,6 @@ def getty_statistics_api(request):
         total_results = sparql.query().convert()
         total_artworks = int(total_results["results"]["bindings"][0].get("count", {}).get("value", 0))
         
-        # Get artworks with Getty AAT links
         sparql.setQuery("""
             PREFIX ex: <http://example.org/ontology/>
             SELECT (COUNT(DISTINCT ?art) as ?count) WHERE {
@@ -482,7 +449,6 @@ def getty_statistics_api(request):
         aat_results = sparql.query().convert()
         getty_aat_artworks = int(aat_results["results"]["bindings"][0].get("count", {}).get("value", 0))
         
-        # Get artists with Getty ULAN links
         sparql.setQuery("""
             PREFIX ex: <http://example.org/ontology/>
             SELECT (COUNT(DISTINCT ?artist) as ?count) WHERE {
@@ -492,7 +458,6 @@ def getty_statistics_api(request):
         ulan_results = sparql.query().convert()
         getty_ulan_artists = int(ulan_results["results"]["bindings"][0].get("count", {}).get("value", 0))
         
-        # Get top movements with Getty AAT IDs
         sparql.setQuery("""
             PREFIX ex: <http://example.org/ontology/>
             SELECT ?movement (COUNT(?art) as ?count) WHERE {
@@ -505,7 +470,6 @@ def getty_statistics_api(request):
         """)
         movements_results = sparql.query().convert()
         
-        # Enrich movements with Getty AAT data
         from .getty_enrichment import get_getty_enrichment
         top_movements = []
         for binding in movements_results["results"]["bindings"]:
@@ -521,7 +485,6 @@ def getty_statistics_api(request):
                     "count": count
                 })
         
-        # Get top artists
         sparql.setQuery("""
             PREFIX ex: <http://example.org/ontology/>
             SELECT ?creator (COUNT(?art) as ?count) WHERE {
@@ -534,7 +497,6 @@ def getty_statistics_api(request):
         """)
         artists_results = sparql.query().convert()
         
-        # Enrich artists with Getty ULAN data
         top_artists = []
         for binding in artists_results["results"]["bindings"]:
             artist = binding.get("creator", {}).get("value", "")

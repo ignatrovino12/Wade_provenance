@@ -66,7 +66,6 @@ def artwork_to_rdf(p):
     return g
 
 def send_to_fuseki(graph: Graph, base_endpoint: str | None = None):
-    # Use the dataset base endpoint (not the /sparql URL) for Graph Store Protocol
     base = base_endpoint or settings.FUSEKI_ENDPOINT.rsplit("/", 1)[0]
     data_endpoint = f"{base}/data"
 
