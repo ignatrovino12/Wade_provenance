@@ -393,11 +393,11 @@ def push_romanian_to_fuseki(artworks):
     print(f"[ROMANIAN] Total {len(triples_list)} triples pushed in {batch_count} batches")
 
 
-def import_romanian_heritage(limit=1000):
+def import_romanian_heritage(limit=100):
     """Main function to import Romanian heritage data
     
     Args:
-        limit: Maximum number of artworks to import (default 1000)
+        limit: Maximum number of artworks to import (default 100)
     """
     print(f"[ROMANIAN] Starting import (limit: {limit} artworks)...")
     
@@ -413,7 +413,16 @@ def import_romanian_heritage(limit=1000):
         print("[ROMANIAN] No artworks parsed")
         return
     
-    # Push to Fuseki
+    # Push to Fuseki (with Getty enrichment already included)
     push_romanian_to_fuseki(artworks)
     
     print("[ROMANIAN] Import complete!")
+
+
+def import_romanian_all(total=100):
+    """Convenient wrapper for import_romanian_heritage
+    
+    Args:
+        total: Maximum number of artworks to import (default 100)
+    """
+    import_romanian_heritage(limit=total)
