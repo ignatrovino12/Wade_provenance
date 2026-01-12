@@ -98,10 +98,10 @@ def download_romanian_artworks():
         return None
 
 
-def parse_romanian_xml(xml_content):
-    """Parse Romanian cultural heritage XML (LIDO schema) - limit to 1000 artworks"""
+def parse_romanian_xml(xml_content, limit=1000):
+    """Parse Romanian cultural heritage XML (LIDO schema) - configurable limit"""
     artworks = []
-    max_artworks = 1000  # Limit to 1000
+    max_artworks = limit  # Configurable limit
     debug_count = 0
     
     try:
@@ -393,9 +393,13 @@ def push_romanian_to_fuseki(artworks):
     print(f"[ROMANIAN] Total {len(triples_list)} triples pushed in {batch_count} batches")
 
 
-def import_romanian_heritage():
-    """Main function to import Romanian heritage data"""
-    print("[ROMANIAN] Starting import...")
+def import_romanian_heritage(limit=1000):
+    """Main function to import Romanian heritage data
+    
+    Args:
+        limit: Maximum number of artworks to import (default 1000)
+    """
+    print(f"[ROMANIAN] Starting import (limit: {limit} artworks)...")
     
     # Download
     xml_content = download_romanian_artworks()
@@ -403,8 +407,8 @@ def import_romanian_heritage():
         print("[ROMANIAN] Download failed, skipping import")
         return
     
-    # Parse
-    artworks = parse_romanian_xml(xml_content)
+    # Parse with limit
+    artworks = parse_romanian_xml(xml_content, limit=limit)
     if not artworks:
         print("[ROMANIAN] No artworks parsed")
         return
