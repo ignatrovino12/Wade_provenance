@@ -60,10 +60,10 @@ def send_to_fuseki(graph: Graph, base_endpoint: str | None = None):
     )
     # print("[FUSEKI] status:", r.status_code)
 
-def preload_all(limit=10):
+def preload_all(limit=10, total=100):
     print("[PRELOAD] Începem preload RDF în Fuseki...")
     try:
-        paintings = get_paintings(limit)
+        paintings = get_paintings(limit=limit, total=total)
     except Exception as e:
         print("[PRELOAD ERROR] fetch paintings failed:", e)
         return

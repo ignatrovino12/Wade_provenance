@@ -437,3 +437,127 @@ def romanian_heritage_api(request):
         data.append(processed_item)
 
     return JsonResponse(data, safe=False)
+
+
+def getty_statistics_page(request):
+    """
+    Render Getty Vocabularies statistics page
+    """
+    return render(request, "getty_statistics.html")
+
+
+def getty_statistics_api(request):
+    """
+    API endpoint for Getty Vocabularies statistics
+    Returns: {
+        total_artworks,
+        getty_aat_artworks,
+        getty_ulan_artists,
+        top_getty_movements: [{movement, aat_id, aat_url, count}],
+        top_getty_artists: [{artist, ulan_id, ulan_url, count}]
+    }
+    """
+    sparql = SPARQLWrapper(settings.FUSEKI_ENDPOINT)
+    sparql.setReturnFormat(JSON)
+    
+    try:
+        # Get total artworks count
+        sparql.setQuery("""
+            PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+            PREFIX ex: <http://example.org/ontology/>
+            SELECT (COUNT(DISTINCT ?art) as ?count) WHERE {
+                ?art rdf:type ex:Artwork .
+            }
+        """)
+        total_results = sparql.query().convert()
+        total_artworks = int(total_results["results"]["bindings"][0].get("count", {}).get("value", 0))
+        
+        # Get artworks with Getty AAT links
+        sparql.setQuery("""
+            PREFIX ex: <http://example.org/ontology/>
+            SELECT (COUNT(DISTINCT ?art) as ?count) WHERE {
+                ?art ex:hasAAT ?aat .
+            }
+        """)
+        aat_results = sparql.query().convert()
+        getty_aat_artworks = int(aat_results["results"]["bindings"][0].get("count", {}).get("value", 0))
+        
+        # Get artists with Getty ULAN links
+        sparql.setQuery("""
+            PREFIX ex: <http://example.org/ontology/>
+            SELECT (COUNT(DISTINCT ?artist) as ?count) WHERE {
+                ?artist ex:hasULAN ?ulan .
+            }
+        """)
+        ulan_results = sparql.query().convert()
+        getty_ulan_artists = int(ulan_results["results"]["bindings"][0].get("count", {}).get("value", 0))
+        
+        # Get top movements with Getty AAT IDs
+        sparql.setQuery("""
+            PREFIX ex: <http://example.org/ontology/>
+            SELECT ?movement (COUNT(?art) as ?count) WHERE {
+                ?art ex:movement ?movement .
+                FILTER(?movement != "" && ?movement != "None")
+            }
+            GROUP BY ?movement
+            ORDER BY DESC(?count)
+            LIMIT 15
+        """)
+        movements_results = sparql.query().convert()
+        
+        # Enrich movements with Getty AAT data
+        from .getty_enrichment import get_getty_enrichment
+        top_movements = []
+        for binding in movements_results["results"]["bindings"]:
+            movement = binding.get("movement", {}).get("value", "")
+            count = int(binding.get("count", {}).get("value", 0))
+            
+            getty_data = get_getty_enrichment(movement, "aat")
+            if getty_data:
+                top_movements.append({
+                    "movement": movement,
+                    "aat_id": getty_data["aat_id"],
+                    "aat_url": getty_data["aat_url"],
+                    "count": count
+                })
+        
+        # Get top artists
+        sparql.setQuery("""
+            PREFIX ex: <http://example.org/ontology/>
+            SELECT ?creator (COUNT(?art) as ?count) WHERE {
+                ?art ex:creator ?creator .
+                FILTER(?creator != "" && ?creator != "Necunoscut" && ?creator != "Unknown")
+            }
+            GROUP BY ?creator
+            ORDER BY DESC(?count)
+            LIMIT 15
+        """)
+        artists_results = sparql.query().convert()
+        
+        # Enrich artists with Getty ULAN data
+        top_artists = []
+        for binding in artists_results["results"]["bindings"]:
+            artist = binding.get("creator", {}).get("value", "")
+            count = int(binding.get("count", {}).get("value", 0))
+            
+            getty_data = get_getty_enrichment(artist, "ulan")
+            if getty_data:
+                top_artists.append({
+                    "artist": artist,
+                    "ulan_id": getty_data["ulan_id"],
+                    "ulan_url": getty_data["ulan_url"],
+                    "count": count
+                })
+        
+        return JsonResponse({
+            "total_artworks": total_artworks,
+            "getty_aat_artworks": getty_aat_artworks,
+            "getty_ulan_artists": getty_ulan_artists,
+            "top_getty_movements": top_movements,
+            "top_getty_artists": top_artists
+        })
+    
+    except Exception as e:
+        return JsonResponse({
+            "error": str(e)
+        }, status=500)

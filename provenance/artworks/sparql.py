@@ -23,7 +23,7 @@ def get_paintings(limit: int = 10, total: int = 100):
     sparql = _make_wikidata_client()
     all_bindings = []
 
-    # paginate through results to reach up to `total`
+    # Paginate through results with simple offset (fast)
     for offset in range(0, total, limit):
         sparql.setQuery(f"""
             PREFIX wd: <http://www.wikidata.org/entity/>
@@ -32,7 +32,6 @@ def get_paintings(limit: int = 10, total: int = 100):
             SELECT ?item ?creator ?inception ?birthDate ?birthPlace ?collection ?location ?movement ?nationality ?creatorMovement WHERE {{
                 ?item wdt:P31 wd:Q3305213.
                 OPTIONAL {{ ?item wdt:P170 ?creator. }}
-                OPTIONAL {{ ?item rdfs:label ?itemLabel. FILTER(lang(?itemLabel) = "en") }}
                 OPTIONAL {{ ?item wdt:P571 ?inception }}
                 OPTIONAL {{ ?item wdt:P195 ?collection }}
                 OPTIONAL {{ ?item wdt:P276 ?location }}
@@ -41,7 +40,8 @@ def get_paintings(limit: int = 10, total: int = 100):
                 OPTIONAL {{ ?creator wdt:P19 ?birthPlace }}
                 OPTIONAL {{ ?creator wdt:P27 ?nationality }}
                 OPTIONAL {{ ?creator wdt:P135 ?creatorMovement }}
-            }} LIMIT {limit} OFFSET {offset}
+            }}
+            LIMIT {limit} OFFSET {offset}
             """)
 
         results = None

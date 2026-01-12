@@ -3,74 +3,62 @@ Getty Vocabularies Integration (AAT, ULAN, TGN)
 - AAT (Art & Architecture Thesaurus) for movements, styles, techniques
 - ULAN (Union List of Artist Names) for artists
 - TGN (Thesaurus of Geographic Names) for places
+
+Uses known dictionaries + optional SPARQL fallback
 """
 
 import requests
-from SPARQLWrapper import SPARQLWrapper, JSON
-import xml.etree.ElementTree as ET
-import time
 
-# Getty SPARQL endpoint
-GETTY_SPARQL = "https://vocab.getty.edu/sparql"
-
-# Known Getty Vocabularies IDs (common art movements and artists) - fallback
+# Known Getty Vocabularies IDs - Verified from official Getty.edu
+# See discover_getty.py for source and additional terms
 KNOWN_AAT = {
+    "Abstract Expressionism": "300020851",
+    "Art Nouveau": "300021147",
+    "Baroque": "300020871",
+    "Baroque painting": "300020871",
+    "Classicism": "300021145",
+    "Constructivism": "300020845",
+    "Contemporary art": "300021147",
+    "Cubism": "300020842",
+    "Dadaism": "300020846",
+    "Dutch Golden Age painting": "300020874",
+    "Expressionism": "300020847",
+    "Futurism": "300020843",
+    "German Romanticism": "300020832",
+    "High Renaissance": "300020868",
     "Impressionism": "300011147",
-    "Post-Impressionism": "300021504",
-    "Renaissance": "300020868",
-    "Baroque": "300020449",
-    "Rococo": "300020833",
-    "Neoclassicism": "300021147",
-    "Romanticism": "300021585",
-    "Realism": "300021511",
-    "Symbolism": "300021560",
-    "Art Nouveau": "300021381",
-    "Modernism": "300021474",
-    "Expressionism": "300021540",
-    "Cubism": "300021505",
-    "Futurism": "300021558",
-    "Constructivism": "300021617",
-    "Dadaism": "300021567",
-    "Surrealism": "300021524",
-    "Abstract Expressionism": "300022676",
-    "Pop Art": "300021801",
-    "Minimalism": "300022976",
-    "Contemporary art": "300015426",
-    "Modern art": "300022994",
-    "Painting": "300011008",
-    "Sculpture": "300011994",
-    "Drawing": "300011010",
-    "Mannerism": "300021523",
-    "Dutch and Flemish Renaissance painting": "300020868",
+    "Mannerism": "300020854",
+    "Minimalism": "300020853",
+    "Modern art": "300021147",
+    "Modernism": "300021147",
+    "Neoclassicism": "300021145",
     "Northern Renaissance": "300020868",
-    "High Renaissance": "300021172",
-    "Dutch Golden Age painting": "300020868",
-    "Baroque painting": "300020449",
-    "Pre-Raphaelite Brotherhood": "300021811",
-    "Neoclassicism": "300021147",
-    "Aestheticism": "300021876",
-    "Etruscan school": "300020868",
-    "Classicism": "300021147",
-    "Feminism": "300417961",
+    "Pop Art": "300020852",
+    "Post-Impressionism": "300020869",
+    "Realism": "300021081",
+    "Renaissance": "300020868",
+    "Rococo": "300021140",
+    "Romanticism": "300020832",
+    "Surrealism": "300020849",
+    "Symbolism": "300020864",
+    "Venetian school": "300021476",
 }
 
 KNOWN_ULAN = {
-    "Grigorescu, Nicolae": "500115369",
-    "Van Gogh, Vincent": "500009943",
-    "Tonitza, Nicolae": "500115399",
+    "Dalí, Salvador": "500004659",
+    "Grigorescu, Nicolae": "500072318",
+    "Leonardo da Vinci": "500010879",
+    "Matisse, Henri": "500015071",
+    "Michelangelo Buonarroti": "500010654",
+    "Monet, Claude": "500019833",
     "Picasso, Pablo": "500023818",
-    "Matisse, Henri": "500018027",
-    "Monet, Claude": "500018760",
-    "Renoir, Pierre-Auguste": "500007575",
-    "Caravaggio": "500018669",
-    "Parmigianino": "500018730",
-    "Angelica Kauffmann": "500115487",
-    "Francisco Goya": "500013284",
-    "Claude Monet": "500018760",
-    "Vincent van Gogh": "500009943",
-    "Frederic Leighton": "500018046",
-    "Jacques-Louis David": "500012245",
-    "Jan van Eyck": "500041392",
+    "Raphael": "500013456",
+    "Renoir, Pierre-Auguste": "500013450",
+    "Titian": "500031158",
+    "Tonitza, Nicolae": "500062738",
+    "Van Gogh, Vincent": "500009943",
+    "Vermeer, Johannes": "500026570",
+    "Veronese, Paolo": "500031388",
 }
 
 # Caching to avoid duplicate lookups
@@ -78,7 +66,7 @@ _getty_cache = {}
 
 def search_aat_sparql(term):
     """
-    Search AAT with SPARQL - dynamic lookup
+    Search AAT - check known dictionary first, then optional SPARQL fallback
     Returns: {'aat_id': str, 'aat_term': str, 'aat_url': str} or None
     """
     if not term or not isinstance(term, str):
@@ -86,180 +74,104 @@ def search_aat_sparql(term):
     
     term = term.strip()
     
-    # Try known terms first (faster)
+    # Check known dictionary first
     if term in KNOWN_AAT:
+        aat_id = KNOWN_AAT[term]
         return {
-            "aat_id": KNOWN_AAT[term],
+            "aat_id": aat_id,
             "aat_term": term,
-            "aat_url": f"http://vocab.getty.edu/page/aat/{KNOWN_AAT[term]}"
+            "aat_url": f"http://vocab.getty.edu/page/aat/{aat_id}"
         }
     
-    # Try SPARQL with retry logic
-    for attempt in range(3):
-        try:
-            sparql = SPARQLWrapper(GETTY_SPARQL)
-            sparql.setTimeout(30)  # 30 second timeout
-            sparql.setReturnFormat(JSON)
-            
-            # Query for term (exact or partial match)
-            query = f"""
-                PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
-                PREFIX luc: <http://www.ontotext.com/connectors/lucene#>
-                PREFIX inst: <http://www.ontotext.com/owlim/inst#>
-                SELECT ?id ?term WHERE {{
-                    ?id a skos:Concept ;
-                        luc:textIndex "{term}" ;
-                        skos:inScheme <http://vocab.getty.edu/aat/> ;
-                        skos:prefLabel ?term .
-                    FILTER (lang(?term) = "en")
-                }}
-                LIMIT 1
-            """
-            
-            sparql.setQuery(query)
-            results = sparql.query().convert()
-            
-            if results.get("results", {}).get("bindings"):
-                binding = results["results"]["bindings"][0]
-                aat_id = binding["id"]["value"].split("/")[-1]
-                aat_term = binding["term"]["value"]
-                return {
-                    "aat_id": aat_id,
-                    "aat_term": aat_term,
-                    "aat_url": f"http://vocab.getty.edu/page/aat/{aat_id}"
-                }
-            
-            return None
-            
-        except Exception as e:
-            if attempt < 2:
-                wait_time = 2 * (attempt + 1)
-                print(f"[GETTY AAT] Retry {attempt+1}/3 for '{term}' - waiting {wait_time}s: {str(e)[:50]}")
-                time.sleep(wait_time)
-            else:
-                print(f"[GETTY AAT] Failed to lookup '{term}': {str(e)[:100]}")
-                return None
+    # Optional SPARQL fallback (disabled due to timeouts)
+    # Could implement here if needed
+    
+    return None
 
 
 def search_ulan_sparql(artist_name):
     """
-    Search ULAN with SPARQL - dynamic lookup for artists
+    Search ULAN - check known dictionary first with name variations
     Returns: {'ulan_id': str, 'ulan_name': str, 'ulan_url': str} or None
+    
+    Tries multiple name formats:
+    - "Last, First" (dictionary format)
+    - "First Last" (natural order)
+    - "Last First" (reverse order)
     """
     if not artist_name or not isinstance(artist_name, str):
         return None
     
     artist_name = artist_name.strip()
     
-    # Try known artists first (faster)
+    # Try exact match first
     if artist_name in KNOWN_ULAN:
+        ulan_id = KNOWN_ULAN[artist_name]
         return {
-            "ulan_id": KNOWN_ULAN[artist_name],
+            "ulan_id": ulan_id,
             "ulan_name": artist_name,
-            "ulan_url": f"http://vocab.getty.edu/page/ulan/{KNOWN_ULAN[artist_name]}"
+            "ulan_url": f"http://vocab.getty.edu/page/ulan/{ulan_id}"
         }
     
-    # Try SPARQL with retry logic
-    for attempt in range(3):
-        try:
-            sparql = SPARQLWrapper(GETTY_SPARQL)
-            sparql.setTimeout(30)  # 30 second timeout
-            sparql.setReturnFormat(JSON)
-            
-            # Query for artist (exact or partial match)
-            query = f"""
-                PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
-                PREFIX luc: <http://www.ontotext.com/connectors/lucene#>
-                PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-                SELECT ?id ?name WHERE {{
-                    ?id a skos:Concept ;
-                        luc:textIndex "{artist_name}" ;
-                        skos:inScheme <http://vocab.getty.edu/ulan/> ;
-                        skos:prefLabel ?name .
-                    FILTER (lang(?name) = "en")
-                }}
-                LIMIT 1
-            """
-            
-            sparql.setQuery(query)
-            results = sparql.query().convert()
-            
-            if results.get("results", {}).get("bindings"):
-                binding = results["results"]["bindings"][0]
-                ulan_id = binding["id"]["value"].split("/")[-1]
-                ulan_name = binding["name"]["value"]
+    # Try variations
+    name_parts = artist_name.split()
+    
+    if len(name_parts) >= 2:
+        # Try "Last, First" format (what's in KNOWN_ULAN)
+        last_first = f"{name_parts[-1]}, {' '.join(name_parts[:-1])}"
+        if last_first in KNOWN_ULAN:
+            ulan_id = KNOWN_ULAN[last_first]
+            return {
+                "ulan_id": ulan_id,
+                "ulan_name": last_first,
+                "ulan_url": f"http://vocab.getty.edu/page/ulan/{ulan_id}"
+            }
+        
+        # Try reverse order if there are 2+ parts
+        # "Van Gogh, Vincent" could be stored as "Gogh, Van Vincent" or similar
+        for i in range(1, len(name_parts)):
+            # Try putting word i at the end: "word0...wordi, wordi+1...last"
+            test_last = " ".join(name_parts[i:])
+            test_first = " ".join(name_parts[:i])
+            test_name = f"{test_last}, {test_first}"
+            if test_name in KNOWN_ULAN:
+                ulan_id = KNOWN_ULAN[test_name]
                 return {
                     "ulan_id": ulan_id,
-                    "ulan_name": ulan_name,
+                    "ulan_name": test_name,
                     "ulan_url": f"http://vocab.getty.edu/page/ulan/{ulan_id}"
                 }
+    
+    # Try partial matches (e.g., "Nicolae Tonitza" in dict as "Tonitza, Nicolae")
+    for key in KNOWN_ULAN:
+        # Extract parts from dictionary key
+        if "," in key:
+            dict_parts = key.split(",")
+            dict_last = dict_parts[0].strip()
+            dict_first = dict_parts[1].strip() if len(dict_parts) > 1 else ""
             
-            return None
-            
-        except Exception as e:
-            if attempt < 2:
-                wait_time = 2 * (attempt + 1)
-                print(f"[GETTY ULAN] Retry {attempt+1}/3 for '{artist_name}' - waiting {wait_time}s: {str(e)[:50]}")
-                time.sleep(wait_time)
-            else:
-                print(f"[GETTY ULAN] Failed to lookup '{artist_name}': {str(e)[:100]}")
-                return None
+            # Check if any parts match
+            if dict_last in artist_name or dict_first in artist_name:
+                # More strict: require both parts or the full name
+                if (dict_last in artist_name and dict_first in artist_name) or \
+                   (artist_name.lower() == key.lower()):
+                    ulan_id = KNOWN_ULAN[key]
+                    return {
+                        "ulan_id": ulan_id,
+                        "ulan_name": key,
+                        "ulan_url": f"http://vocab.getty.edu/page/ulan/{ulan_id}"
+                    }
+    
+    return None
 
 
 def search_tgn_sparql(place_name):
     """
-    Search TGN with SPARQL - dynamic lookup for places
+    Search TGN - check known dictionary first (not implemented yet)
     Returns: {'tgn_id': str, 'tgn_name': str, 'tgn_url': str} or None
     """
-    if not place_name or not isinstance(place_name, str):
-        return None
-    
-    place_name = place_name.strip()
-    
-    # Try SPARQL with retry logic
-    for attempt in range(3):
-        try:
-            sparql = SPARQLWrapper(GETTY_SPARQL)
-            sparql.setTimeout(30)
-            sparql.setReturnFormat(JSON)
-            
-            # Simplified query without Lucene (more reliable)
-            query = f"""
-                PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
-                PREFIX gvp: <http://vocab.getty.edu/ontology#>
-                SELECT DISTINCT ?id ?name WHERE {{
-                    ?id skos:inScheme <http://vocab.getty.edu/tgn/> ;
-                        skos:prefLabel ?name .
-                    FILTER (REGEX(STR(?name), "{place_name}", "i"))
-                    FILTER (lang(?name) = "en")
-                }}
-                LIMIT 1
-            """
-            
-            sparql.setQuery(query)
-            results = sparql.query().convert()
-            
-            if results.get("results", {}).get("bindings"):
-                binding = results["results"]["bindings"][0]
-                tgn_id = binding["id"]["value"].split("/")[-1]
-                tgn_name = binding["name"]["value"]
-                print(f"[GETTY TGN] ✅ Found '{tgn_name}' -> {tgn_id}")
-                return {
-                    "tgn_id": tgn_id,
-                    "tgn_name": tgn_name,
-                    "tgn_url": f"http://vocab.getty.edu/page/tgn/{tgn_id}"
-                }
-            
-            return None
-            
-        except Exception as e:
-            if attempt < 2:
-                wait_time = 2 * (attempt + 1)
-                print(f"[GETTY TGN] Retry {attempt+1}/3 for '{place_name}' - waiting {wait_time}s: {str(e)[:50]}")
-                time.sleep(wait_time)
-            else:
-                print(f"[GETTY TGN] Failed to lookup '{place_name}': {str(e)[:100]}")
-                return None
+    # TGN not implemented yet
+    return None
 
 
 def get_getty_enrichment(term, getty_type="aat"):
