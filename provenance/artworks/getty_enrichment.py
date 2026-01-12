@@ -1,207 +1,279 @@
-"""
-Getty Vocabularies Integration (AAT, ULAN, TGN)
-- AAT (Art & Architecture Thesaurus) for movements, styles, techniques
-- ULAN (Union List of Artist Names) for artists
-- TGN (Thesaurus of Geographic Names) for places
-
-Uses known dictionaries + optional SPARQL fallback
-"""
-
+from SPARQLWrapper import SPARQLWrapper, JSON
+from django.utils import timezone
+from datetime import timedelta
+from .models import GettyULAN, GettyAAT
+import urllib.error as urlerror
+import urllib.parse
+import socket
+import time
 import requests
+import json
 
-# Known Getty Vocabularies IDs - Verified from official Getty.edu
-# See discover_getty.py for source and additional terms
-KNOWN_AAT = {
-    "Abstract Expressionism": "300020851",
-    "Art Nouveau": "300021147",
-    "Baroque": "300020871",
-    "Baroque painting": "300020871",
-    "Classicism": "300021145",
-    "Constructivism": "300020845",
-    "Contemporary art": "300021147",
-    "Cubism": "300020842",
-    "Dadaism": "300020846",
-    "Dutch Golden Age painting": "300020874",
-    "Expressionism": "300020847",
-    "Futurism": "300020843",
-    "German Romanticism": "300020832",
-    "High Renaissance": "300020868",
-    "Impressionism": "300011147",
-    "Mannerism": "300020854",
-    "Minimalism": "300020853",
-    "Modern art": "300021147",
-    "Modernism": "300021147",
-    "Neoclassicism": "300021145",
-    "Northern Renaissance": "300020868",
-    "Pop Art": "300020852",
-    "Post-Impressionism": "300020869",
-    "Realism": "300021081",
-    "Renaissance": "300020868",
-    "Rococo": "300021140",
-    "Romanticism": "300020832",
-    "Surrealism": "300020849",
-    "Symbolism": "300020864",
-    "Venetian school": "300021476",
-}
+GETTY_SPARQL_ENDPOINT = "http://vocab.getty.edu/sparql"
+GETTY_SPARQL_JSON = "http://vocab.getty.edu/sparql.json"
+CACHE_TTL_DAYS = 180  # Cache for 6 months
+RETRY_COUNT = 3
+TIMEOUT = 30
+USER_AGENT = "provenance-app/1.0 (contact: example@example.com)"
 
-KNOWN_ULAN = {
-    "Dalí, Salvador": "500004659",
-    "Grigorescu, Nicolae": "500072318",
-    "Leonardo da Vinci": "500010879",
-    "Matisse, Henri": "500015071",
-    "Michelangelo Buonarroti": "500010654",
-    "Monet, Claude": "500019833",
-    "Picasso, Pablo": "500023818",
-    "Raphael": "500013456",
-    "Renoir, Pierre-Auguste": "500013450",
-    "Titian": "500031158",
-    "Tonitza, Nicolae": "500062738",
-    "Van Gogh, Vincent": "500009943",
-    "Vermeer, Johannes": "500026570",
-    "Veronese, Paolo": "500031388",
-}
-
-# Caching to avoid duplicate lookups
-_getty_cache = {}
-
-def search_aat_sparql(term):
-    """
-    Search AAT - check known dictionary first, then optional SPARQL fallback
-    Returns: {'aat_id': str, 'aat_term': str, 'aat_url': str} or None
-    """
-    if not term or not isinstance(term, str):
-        return None
+def _query_getty_sparql(query: str):
+    """Query Getty SPARQL endpoint using POST request"""
+    headers = {
+        'User-Agent': USER_AGENT,
+        'Accept': 'application/sparql-results+json',
+        'Content-Type': 'application/sparql-query; charset=utf-8'
+    }
     
-    term = term.strip()
-    
-    # Check known dictionary first
-    if term in KNOWN_AAT:
-        aat_id = KNOWN_AAT[term]
-        return {
-            "aat_id": aat_id,
-            "aat_term": term,
-            "aat_url": f"http://vocab.getty.edu/page/aat/{aat_id}"
-        }
-    
-    # Optional SPARQL fallback (disabled due to timeouts)
-    # Could implement here if needed
-    
-    return None
-
-
-def search_ulan_sparql(artist_name):
-    """
-    Search ULAN - check known dictionary first with name variations
-    Returns: {'ulan_id': str, 'ulan_name': str, 'ulan_url': str} or None
-    
-    Tries multiple name formats:
-    - "Last, First" (dictionary format)
-    - "First Last" (natural order)
-    - "Last First" (reverse order)
-    """
-    if not artist_name or not isinstance(artist_name, str):
-        return None
-    
-    artist_name = artist_name.strip()
-    
-    # Try exact match first
-    if artist_name in KNOWN_ULAN:
-        ulan_id = KNOWN_ULAN[artist_name]
-        return {
-            "ulan_id": ulan_id,
-            "ulan_name": artist_name,
-            "ulan_url": f"http://vocab.getty.edu/page/ulan/{ulan_id}"
-        }
-    
-    # Try variations
-    name_parts = artist_name.split()
-    
-    if len(name_parts) >= 2:
-        # Try "Last, First" format (what's in KNOWN_ULAN)
-        last_first = f"{name_parts[-1]}, {' '.join(name_parts[:-1])}"
-        if last_first in KNOWN_ULAN:
-            ulan_id = KNOWN_ULAN[last_first]
-            return {
-                "ulan_id": ulan_id,
-                "ulan_name": last_first,
-                "ulan_url": f"http://vocab.getty.edu/page/ulan/{ulan_id}"
-            }
+    try:
+        response = requests.post(
+            GETTY_SPARQL_ENDPOINT,
+            data=query.encode('utf-8'),
+            headers=headers,
+            timeout=TIMEOUT
+        )
+        response.raise_for_status()
         
-        # Try reverse order if there are 2+ parts
-        # "Van Gogh, Vincent" could be stored as "Gogh, Van Vincent" or similar
-        for i in range(1, len(name_parts)):
-            # Try putting word i at the end: "word0...wordi, wordi+1...last"
-            test_last = " ".join(name_parts[i:])
-            test_first = " ".join(name_parts[:i])
-            test_name = f"{test_last}, {test_first}"
-            if test_name in KNOWN_ULAN:
-                ulan_id = KNOWN_ULAN[test_name]
-                return {
-                    "ulan_id": ulan_id,
-                    "ulan_name": test_name,
-                    "ulan_url": f"http://vocab.getty.edu/page/ulan/{ulan_id}"
-                }
-    
-    # Try partial matches (e.g., "Nicolae Tonitza" in dict as "Tonitza, Nicolae")
-    for key in KNOWN_ULAN:
-        # Extract parts from dictionary key
-        if "," in key:
-            dict_parts = key.split(",")
-            dict_last = dict_parts[0].strip()
-            dict_first = dict_parts[1].strip() if len(dict_parts) > 1 else ""
+        # Check if response has content
+        if not response.text or len(response.text.strip()) == 0:
+            print(f"[GETTY SPARQL ERROR] Empty response from Getty endpoint")
+            return None
             
-            # Check if any parts match
-            if dict_last in artist_name or dict_first in artist_name:
-                # More strict: require both parts or the full name
-                if (dict_last in artist_name and dict_first in artist_name) or \
-                   (artist_name.lower() == key.lower()):
-                    ulan_id = KNOWN_ULAN[key]
-                    return {
-                        "ulan_id": ulan_id,
-                        "ulan_name": key,
-                        "ulan_url": f"http://vocab.getty.edu/page/ulan/{ulan_id}"
-                    }
+        return response.json()
+    except requests.exceptions.Timeout:
+        print(f"[GETTY SPARQL TIMEOUT] Query timed out after {TIMEOUT}s")
+        return None
+    except requests.exceptions.JSONDecodeError as e:
+        print(f"[GETTY SPARQL ERROR] Invalid JSON response: {e}")
+        return None
+    except requests.exceptions.RequestException as e:
+        print(f"[GETTY SPARQL ERROR] Request failed: {e}")
+        return None
+
+def search_ulan_sparql(artist_name: str):
+    """
+    Search Getty ULAN for an artist by name.
+    Returns dict with ulan_id, ulan_url, preferred_label or None if not found.
+    """
+    if not artist_name or artist_name.strip() == "":
+        return None
     
+    print(f"[GETTY ULAN] Searching for artist: {artist_name}")
+    
+    # Check cache first
+    try:
+        cached = GettyULAN.objects.get(name=artist_name)
+        if cached.fetched_at > timezone.now() - timedelta(days=CACHE_TTL_DAYS):
+            if cached.ulan_id:
+                return {
+                    "ulan_id": cached.ulan_id,
+                    "ulan_url": cached.ulan_url,
+                    "preferred_label": cached.preferred_label
+                }
+            else:
+                return None  # Previously searched but not found
+    except GettyULAN.DoesNotExist:
+        pass
+    
+    # Getty ULAN stores names as "Last, First" - try to convert if needed
+    search_names = [artist_name]
+    
+    # If name doesn't contain comma, try reversing it to "Last, First" format
+    if ',' not in artist_name:
+        parts = artist_name.strip().split()
+        if len(parts) >= 2:
+            # For "Pablo Picasso" -> "Picasso, Pablo"
+            reversed_name = f"{parts[-1]}, {' '.join(parts[:-1])}"
+            search_names.append(reversed_name)
+            print(f"[GETTY ULAN] Will also try reversed format: {reversed_name}")
+    
+    # Try each name variant
+    for name_variant in search_names:
+        print(f"[GETTY ULAN] Querying Getty with: {name_variant}")
+        safe_name = name_variant.replace('\\', '\\\\').replace('"', '\\"')
+        
+        # Use FILTER with regex (compact format)
+        query = f"""PREFIX gvp: <http://vocab.getty.edu/ontology#>
+PREFIX xl: <http://www.w3.org/2008/05/skos-xl#>
+SELECT ?subject ?label WHERE {{
+  ?subject a gvp:PersonConcept ;
+           gvp:prefLabelGVP [xl:literalForm ?label] .
+  FILTER(regex(?label, "{safe_name}", "i"))
+}}
+LIMIT 5"""
+        
+        for attempt in range(RETRY_COUNT):
+            try:
+                results = _query_getty_sparql(query)
+                
+                if results:
+                    bindings = results.get("results", {}).get("bindings", [])
+                    
+                    if bindings:
+                        # Get the first result
+                        subject_uri = bindings[0]["subject"]["value"]
+                        label = bindings[0].get("label", {}).get("value", artist_name)
+                        
+                        # Extract ULAN ID from URI (e.g., http://vocab.getty.edu/ulan/500115588)
+                        ulan_id = subject_uri.split("/")[-1]
+                        ulan_url = f"http://vocab.getty.edu/page/ulan/{ulan_id}"
+                        
+                        # Cache the result (using original artist_name as key)
+                        GettyULAN.objects.update_or_create(
+                            name=artist_name,
+                            defaults={
+                                "ulan_id": ulan_id,
+                                "ulan_url": ulan_url,
+                                "preferred_label": label,
+                                "fetched_at": timezone.now()
+                            }
+                        )
+                        
+                        print(f"[GETTY ULAN] {artist_name} -> {ulan_id} (searched as: {name_variant})")
+                        return {
+                            "ulan_id": ulan_id,
+                            "ulan_url": ulan_url,
+                            "preferred_label": label
+                        }
+                
+                # If found with this name variant, we would have returned above
+                # Try next variant if available
+                
+            except Exception as e:
+                print(f"[GETTY ULAN RETRY {attempt+1}] {name_variant} → {e}")
+                time.sleep(0.5 * (attempt + 1))
+                continue  # Try next attempt
+            
+            # If we got results (even empty), break and try next name variant
+            break
+    
+    # Not found with any name variant - cache negative result
+    GettyULAN.objects.update_or_create(
+        name=artist_name,
+        defaults={
+            "ulan_id": None,
+            "ulan_url": None,
+            "preferred_label": None,
+            "fetched_at": timezone.now()
+        }
+    )
     return None
 
-
-def search_tgn_sparql(place_name):
+def search_aat_sparql(movement_term: str):
     """
-    Search TGN - check known dictionary first (not implemented yet)
-    Returns: {'tgn_id': str, 'tgn_name': str, 'tgn_url': str} or None
+    Search Getty AAT for an art movement/style term.
+    Returns dict with aat_id, aat_url, preferred_label or None if not found.
     """
-    # TGN not implemented yet
+    if not movement_term or movement_term.strip() == "":
+        return None
+    
+    print(f"[GETTY AAT] Searching for movement: {movement_term}")
+    
+    # Check cache first
+    try:
+        cached = GettyAAT.objects.get(term=movement_term)
+        if cached.fetched_at > timezone.now() - timedelta(days=CACHE_TTL_DAYS):
+            if cached.aat_id:
+                return {
+                    "aat_id": cached.aat_id,
+                    "aat_url": cached.aat_url,
+                    "preferred_label": cached.preferred_label
+                }
+            else:
+                return None  # Previously searched but not found
+    except GettyAAT.DoesNotExist:
+        pass
+    
+    # Query Getty AAT
+    print(f"[GETTY AAT] Querying Getty with: {movement_term}")
+    safe_term = movement_term.replace('\\', '\\\\').replace('"', '\\"')
+    
+    # Use FILTER with regex (compact format)
+    query = f"""PREFIX gvp: <http://vocab.getty.edu/ontology#>
+PREFIX xl: <http://www.w3.org/2008/05/skos-xl#>
+SELECT ?subject ?label WHERE {{
+  ?subject a gvp:Concept ;
+           gvp:prefLabelGVP [xl:literalForm ?label] .
+  FILTER(regex(?label, "{safe_term}", "i"))
+}}
+LIMIT 5"""
+    
+    for attempt in range(RETRY_COUNT):
+        try:
+            results = _query_getty_sparql(query)
+            
+            if results:
+                bindings = results.get("results", {}).get("bindings", [])
+                
+                if bindings:
+                    # Get the first result
+                    subject_uri = bindings[0]["subject"]["value"]
+                    label = bindings[0].get("label", {}).get("value", movement_term)
+                    
+                    # Extract AAT ID from URI (e.g., http://vocab.getty.edu/aat/300021147)
+                    aat_id = subject_uri.split("/")[-1]
+                    aat_url = f"http://vocab.getty.edu/page/aat/{aat_id}"
+                    
+                    # Cache the result
+                    GettyAAT.objects.update_or_create(
+                        term=movement_term,
+                        defaults={
+                            "aat_id": aat_id,
+                            "aat_url": aat_url,
+                            "preferred_label": label,
+                            "fetched_at": timezone.now()
+                        }
+                    )
+                    
+                    print(f"[GETTY AAT] {movement_term} -> {aat_id}")
+                    return {
+                        "aat_id": aat_id,
+                        "aat_url": aat_url,
+                        "preferred_label": label
+                    }
+            
+            # Not found - cache negative result
+            GettyAAT.objects.update_or_create(
+                term=movement_term,
+                defaults={
+                    "aat_id": None,
+                    "aat_url": None,
+                    "preferred_label": None,
+                    "fetched_at": timezone.now()
+                }
+            )
+            return None
+                
+        except Exception as e:
+            print(f"[GETTY AAT RETRY {attempt+1}] {movement_term} → {e}")
+            time.sleep(0.5 * (attempt + 1))
+    
+    # Failed after retries - cache negative result
+    GettyAAT.objects.update_or_create(
+        term=movement_term,
+        defaults={
+            "aat_id": None,
+            "aat_url": None,
+            "preferred_label": None,
+            "fetched_at": timezone.now()
+        }
+    )
     return None
 
-
-def get_getty_enrichment(term, getty_type="aat"):
+def get_getty_enrichment(name_or_term: str, vocabulary: str):
     """
-    Cached Getty vocabulary lookup (AAT, ULAN, or TGN)
-    Returns enrichment data or None
+    Unified function to get Getty enrichment data.
     
     Args:
-        term: The term to lookup
-        getty_type: "aat" (movements), "ulan" (artists), or "tgn" (places)
+        name_or_term: Artist name or movement term to search for
+        vocabulary: Either "ulan" for artists or "aat" for movements
+    
+    Returns:
+        Dict with Getty data or None if not found
     """
-    if not term:
+    if vocabulary.lower() == "ulan":
+        return search_ulan_sparql(name_or_term)
+    elif vocabulary.lower() == "aat":
+        return search_aat_sparql(name_or_term)
+    else:
+        print(f"[GETTY ERROR] Unknown vocabulary: {vocabulary}")
         return None
-    
-    cache_key = f"{getty_type}:{term}"
-    
-    if cache_key in _getty_cache:
-        return _getty_cache[cache_key]
-    
-    result = None
-    if getty_type.lower() == "aat":
-        result = search_aat_sparql(term)
-    elif getty_type.lower() == "ulan":
-        result = search_ulan_sparql(term)
-    elif getty_type.lower() == "tgn":
-        result = search_tgn_sparql(term)
-    
-    _getty_cache[cache_key] = result
-    return result
-
-
-
-

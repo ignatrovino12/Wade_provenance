@@ -13,6 +13,22 @@ def artwork_to_rdf(p):
     g.add((subj, EX.title, Literal(p["title"])))
     g.add((subj, EX.creator, Literal(p.get("creator"))))
     
+    # Add artist URI and Getty ULAN enrichment
+    if p.get("creator"):
+        creator = p["creator"]
+        artist_uri = URIRef(EX[creator.replace(" ", "_")])
+        g.add((subj, EX.createdBy, artist_uri))
+        g.add((artist_uri, RDF.type, EX.Artist))
+        g.add((artist_uri, EX.name, Literal(creator)))
+        
+        # Add Getty ULAN link for artist
+        ulan_data = get_getty_enrichment(creator, "ulan")
+        if ulan_data:
+            ulan_id = ulan_data.get("ulan_id", "")
+            if ulan_id:
+                g.add((artist_uri, EX.hasULAN, URIRef(f"http://vocab.getty.edu/page/ulan/{ulan_id}")))
+                print(f"[GETTY ULAN] {creator} -> {ulan_id}")
+    
     # Handle museum - can be a set or string
     if isinstance(p.get("museum"), set):
         for museum in p["museum"]:
@@ -35,6 +51,7 @@ def artwork_to_rdf(p):
                     aat_id = aat_data.get("aat_id", "")
                     if aat_id:
                         g.add((subj, EX.hasAAT, URIRef(f"http://vocab.getty.edu/page/aat/{aat_id}")))
+                        print(f"[GETTY AAT] {movement} -> {aat_id}")
     else:
         if p.get("movement"):
             g.add((subj, EX.movement, Literal(p["movement"])))
@@ -44,6 +61,7 @@ def artwork_to_rdf(p):
                 aat_id = aat_data.get("aat_id", "")
                 if aat_id:
                     g.add((subj, EX.hasAAT, URIRef(f"http://vocab.getty.edu/page/aat/{aat_id}")))
+                    print(f"[GETTY AAT] {p['movement']} -> {aat_id}")
 
     return g
 
