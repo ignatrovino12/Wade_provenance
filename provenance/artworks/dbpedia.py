@@ -21,8 +21,7 @@ def _make_client():
     return client
 
 def _resolve_resource_uri(full_name: str) -> str:
-    """Resolve DBpedia resource by matching rdfs:label in multiple languages.
-    Falls back to direct resource URI if not found."""
+
     safe_name = full_name.replace('"', '\"')
     client = _make_client()
     client.setQuery(f"""
@@ -46,13 +45,7 @@ def _resolve_resource_uri(full_name: str) -> str:
     return f"http://dbpedia.org/resource/{resource_name}"
 
 def get_author_details(full_name: str):
-    """
-    - verifică cache permanent
-    - dacă e expirat revalidează
-    - dacă DBpedia pica → returnează cache
-    """
 
-    # ---------- CACHE CHECK ----------
     try:
         artist = DBpediaArtist.objects.get(name=full_name)
         if artist.fetched_at > timezone.now() - timedelta(days=CACHE_TTL_DAYS):
@@ -61,7 +54,6 @@ def get_author_details(full_name: str):
     except DBpediaArtist.DoesNotExist:
         artist = None
 
-    # ---------- REQUEST DBPEDIA ----------
         resource_uri = _resolve_resource_uri(full_name)
 
         sparql = _make_client()
@@ -94,14 +86,12 @@ def get_author_details(full_name: str):
             print(f"[DBPEDIA ERROR] {full_name} → {e}")
             break
 
-    # ---------- FALLBACK ----------
     if data is None:
         print(f"[DBPEDIA FAIL] folosesc fallback cache pt {full_name}")
         if artist:
             return _to_dict(artist)
         return _empty()
 
-    # ---------- SAVE CACHE ----------
     db_obj, _ = DBpediaArtist.objects.update_or_create(
         name=full_name,
         defaults=data
@@ -109,7 +99,6 @@ def get_author_details(full_name: str):
     return _to_dict(db_obj)
 
 
-# helpers
 def _extract_data(results):
     data = _empty()
     if results["results"]["bindings"]:

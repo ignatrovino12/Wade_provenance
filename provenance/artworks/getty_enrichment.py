@@ -11,7 +11,7 @@ import json
 
 GETTY_SPARQL_ENDPOINT = "http://vocab.getty.edu/sparql"
 GETTY_SPARQL_JSON = "http://vocab.getty.edu/sparql.json"
-CACHE_TTL_DAYS = 180  # Cache for 6 months
+CACHE_TTL_DAYS = 180 
 RETRY_COUNT = 3
 TIMEOUT = 30
 USER_AGENT = "provenance-app/1.0 (contact: example@example.com)"
@@ -74,10 +74,8 @@ def search_ulan_sparql(artist_name: str):
     except GettyULAN.DoesNotExist:
         pass
     
-    # Getty ULAN stores names as "Last, First" - try to convert if needed
     search_names = [artist_name]
     
-    # If name doesn't contain comma, try reversing it to "Last, First" format
     if ',' not in artist_name:
         parts = artist_name.strip().split()
         if len(parts) >= 2:
@@ -109,15 +107,12 @@ LIMIT 5"""
                     bindings = results.get("results", {}).get("bindings", [])
                     
                     if bindings:
-                        # Get the first result
                         subject_uri = bindings[0]["subject"]["value"]
                         label = bindings[0].get("label", {}).get("value", artist_name)
                         
-                        # Extract ULAN ID from URI (e.g., http://vocab.getty.edu/ulan/500115588)
                         ulan_id = subject_uri.split("/")[-1]
                         ulan_url = f"http://vocab.getty.edu/page/ulan/{ulan_id}"
                         
-                        # Cache the result (using original artist_name as key)
                         GettyULAN.objects.update_or_create(
                             name=artist_name,
                             defaults={
@@ -135,18 +130,14 @@ LIMIT 5"""
                             "preferred_label": label
                         }
                 
-                # If found with this name variant, we would have returned above
-                # Try next variant if available
                 
             except Exception as e:
                 print(f"[GETTY ULAN RETRY {attempt+1}] {name_variant} → {e}")
                 time.sleep(0.5 * (attempt + 1))
-                continue  # Try next attempt
+                continue 
             
-            # If we got results (even empty), break and try next name variant
             break
     
-    # Not found with any name variant - cache negative result
     GettyULAN.objects.update_or_create(
         name=artist_name,
         defaults={
@@ -168,7 +159,6 @@ def search_aat_sparql(movement_term: str):
     
     print(f"[GETTY AAT] Searching for movement: {movement_term}")
     
-    # Check cache first
     try:
         cached = GettyAAT.objects.get(term=movement_term)
         if cached.fetched_at > timezone.now() - timedelta(days=CACHE_TTL_DAYS):
@@ -179,15 +169,13 @@ def search_aat_sparql(movement_term: str):
                     "preferred_label": cached.preferred_label
                 }
             else:
-                return None  # Previously searched but not found
+                return None  
     except GettyAAT.DoesNotExist:
         pass
     
-    # Query Getty AAT
     print(f"[GETTY AAT] Querying Getty with: {movement_term}")
     safe_term = movement_term.replace('\\', '\\\\').replace('"', '\\"')
     
-    # Use FILTER with regex (compact format)
     query = f"""PREFIX gvp: <http://vocab.getty.edu/ontology#>
 PREFIX xl: <http://www.w3.org/2008/05/skos-xl#>
 SELECT ?subject ?label WHERE {{
@@ -205,15 +193,12 @@ LIMIT 5"""
                 bindings = results.get("results", {}).get("bindings", [])
                 
                 if bindings:
-                    # Get the first result
                     subject_uri = bindings[0]["subject"]["value"]
                     label = bindings[0].get("label", {}).get("value", movement_term)
                     
-                    # Extract AAT ID from URI (e.g., http://vocab.getty.edu/aat/300021147)
                     aat_id = subject_uri.split("/")[-1]
                     aat_url = f"http://vocab.getty.edu/page/aat/{aat_id}"
                     
-                    # Cache the result
                     GettyAAT.objects.update_or_create(
                         term=movement_term,
                         defaults={
@@ -231,7 +216,6 @@ LIMIT 5"""
                         "preferred_label": label
                     }
             
-            # Not found - cache negative result
             GettyAAT.objects.update_or_create(
                 term=movement_term,
                 defaults={
@@ -247,7 +231,6 @@ LIMIT 5"""
             print(f"[GETTY AAT RETRY {attempt+1}] {movement_term} → {e}")
             time.sleep(0.5 * (attempt + 1))
     
-    # Failed after retries - cache negative result
     GettyAAT.objects.update_or_create(
         term=movement_term,
         defaults={
@@ -260,16 +243,6 @@ LIMIT 5"""
     return None
 
 def get_getty_enrichment(name_or_term: str, vocabulary: str):
-    """
-    Unified function to get Getty enrichment data.
-    
-    Args:
-        name_or_term: Artist name or movement term to search for
-        vocabulary: Either "ulan" for artists or "aat" for movements
-    
-    Returns:
-        Dict with Getty data or None if not found
-    """
     if vocabulary.lower() == "ulan":
         return search_ulan_sparql(name_or_term)
     elif vocabulary.lower() == "aat":

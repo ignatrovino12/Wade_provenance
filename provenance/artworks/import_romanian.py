@@ -1,8 +1,3 @@
-"""
-Import Romanian cultural heritage from data.gov.ro
-Downloads XML from: https://data.gov.ro/dataset/bunuri-culturale-clasate-arta
-"""
-
 import requests
 import xml.etree.ElementTree as ET
 from rdflib import Graph, Namespace, Literal, URIRef
@@ -20,10 +15,8 @@ def get_wikidata_artist_details(artist_name):
     try:
         sparql = SPARQLWrapper("https://query.wikidata.org/sparql")
         
-        # Escape single quotes in artist name
         escaped_name = artist_name.replace("'", "\\'")
         
-        # Search for artist
         query = f"""
             SELECT ?birthDate ?birthPlaceLabel ?nationalityLabel ?movementLabel WHERE {{
                 ?person rdfs:label "{escaped_name}"@en .
@@ -61,8 +54,6 @@ def get_wikidata_artist_details(artist_name):
     return {"birthDate": None, "birthPlace": None, "nationality": None, "movement": None}
 
 def download_romanian_artworks():
-    """Download Romanian cultural heritage data from data.gov.ro"""
-    # API endpoint for the dataset
     api_url = "https://data.gov.ro/api/3/action/package_show?id=bunuri-culturale-clasate-arta"
     
     try:
@@ -99,7 +90,6 @@ def download_romanian_artworks():
 
 
 def parse_romanian_xml(xml_content, limit=1000):
-    """Parse Romanian cultural heritage XML (LIDO schema) - configurable limit"""
     artworks = []
     max_artworks = limit  # Configurable limit
     debug_count = 0
@@ -107,46 +97,36 @@ def parse_romanian_xml(xml_content, limit=1000):
     try:
         root = ET.fromstring(xml_content)
         
-        # LIDO namespace
         ns = {'lido': 'http://www.lido-schema.org'}
         
-        # Parse each lido item
         for lido_item in root.findall('lido:lido', ns):
             if len(artworks) >= max_artworks:
                 break
                 
             artwork = {}
             
-            # Extract ID
             rec_id = lido_item.find('lido:lidoRecID', ns)
             if rec_id is not None:
                 artwork["id"] = rec_id.text
             
-            # Extract from descriptiveMetadata
             desc_meta = lido_item.find('lido:descriptiveMetadata', ns)
             if desc_meta is not None:
-                # Try multiple paths for title extraction
                 title = None
                 
-                # Path 1: objectNameWrap/objectName/appellationValue
                 obj_name = desc_meta.find('.//lido:objectNameWrap/lido:objectName/lido:appellationValue', ns)
                 if obj_name is not None and obj_name.text:
                     title = obj_name.text
                 
-                # Path 2: titleWrap/titleSet/appellationValue
                 if not title:
                     title_elem = desc_meta.find('.//lido:titleWrap/lido:titleSet/lido:appellationValue', ns)
                     if title_elem is not None and title_elem.text:
                         title = title_elem.text
                 
-                # Path 3: objectDescriptionWrap (use as title if nothing else)
                 if not title:
                     desc_elem = desc_meta.find('.//lido:objectDescriptionWrap/lido:objectDescription/lido:descriptiveNoteValue', ns)
                     if desc_elem is not None and desc_elem.text:
-                        # Use first 100 chars of description as title
                         title = desc_elem.text[:100]
                 
-                # Path 4: objectClassificationWrap (use classification as fallback)
                 if not title:
                     obj_classif = desc_meta.find('.//lido:objectClassificationWrap/lido:classificationWrap/lido:classification', ns)
                     if obj_classif is not None and obj_classif.text:
@@ -155,79 +135,64 @@ def parse_romanian_xml(xml_content, limit=1000):
                 if title:
                     artwork["title"] = title.strip()
                 
-                # Actor (creator) - try multiple paths
                 actor_elem = desc_meta.find('.//lido:eventWrap/lido:eventSet/lido:event/lido:eventActor/lido:actorInRole/lido:actor/lido:nameActorSet/lido:appellationValue', ns)
                 if actor_elem is not None and actor_elem.text:
                     artwork["creator"] = actor_elem.text
                 
-                # Alternative actor path
                 if "creator" not in artwork:
                     alt_actor = desc_meta.find('.//lido:actorInRole/lido:actor/lido:nameActorSet/lido:appellationValue', ns)
                     if alt_actor is not None and alt_actor.text:
                         artwork["creator"] = alt_actor.text
                 
-                # Event date
                 date_elem = desc_meta.find('.//lido:eventWrap/lido:eventSet/lido:event/lido:eventDate/lido:displayDate', ns)
                 if date_elem is not None and date_elem.text:
                     artwork["date"] = date_elem.text
                 
-                # Style/Movement - try multiple paths
                 style_elem = desc_meta.find('.//lido:styleWrap/lido:styleSet/lido:term', ns)
                 if style_elem is not None and style_elem.text:
                     artwork["movement"] = style_elem.text.strip()
                 
-                # Period as alternative for movement
                 if "movement" not in artwork:
                     period_elem = desc_meta.find('.//lido:periodWrap/lido:periodSet/lido:term', ns)
                     if period_elem is not None and period_elem.text:
                         artwork["movement"] = period_elem.text.strip()
                 
-                # Culture
                 if "movement" not in artwork:
                     culture_elem = desc_meta.find('.//lido:cultureWrap/lido:cultureSet/lido:term', ns)
                     if culture_elem is not None and culture_elem.text:
                         artwork["movement"] = culture_elem.text.strip()
             
-            # Extract from administrativeMetadata
             admin_meta = lido_item.find('lido:administrativeMetadata', ns)
             if admin_meta is not None:
-                # Repository/Museum - try multiple paths
                 repo = admin_meta.find('.//lido:repositoryWrap/lido:repositorySet/lido:repositoryName/lido:legalBodyName/lido:appellationValue', ns)
                 if repo is not None and repo.text:
                     artwork["museum"] = repo.text.strip()
                 
-                # Alternative museum path
                 if "museum" not in artwork:
                     alt_repo = admin_meta.find('.//lido:repositoryName/lido:legalBodyName/lido:appellationValue', ns)
                     if alt_repo is not None and alt_repo.text:
                         artwork["museum"] = alt_repo.text.strip()
                 
-                # Try even broader path
                 if "museum" not in artwork:
                     broad_repo = admin_meta.find('.//lido:repositoryName/lido:appellationValue', ns)
                     if broad_repo is not None and broad_repo.text:
                         artwork["museum"] = broad_repo.text.strip()
                 
-                # Try recordSource as museum
                 if "museum" not in artwork:
                     record_source = admin_meta.find('.//lido:recordSource/lido:legalBodyName/lido:appellationValue', ns)
                     if record_source is not None and record_source.text:
                         artwork["museum"] = record_source.text.strip()
                 
-                # Object measurement (size)
                 measure = admin_meta.find('.//lido:objectMeasurementsWrap/lido:objectMeasurements/lido:measurementSet/lido:measurementValue', ns)
                 if measure is not None and measure.text:
                     artwork["size"] = measure.text
             
-            # Only add if has creator (required field)
             if artwork.get("creator"):
-                # Ensure title exists
                 if not artwork.get("title"):
                     artwork["title"] = f"Lucrare de {artwork.get('creator', 'autor necunoscut')}"
                 
                 artworks.append(artwork)
                 
-                # Debug: print first 3 artworks with ALL details
                 if len(artworks) <= 3:
                     print(f"\n[DEBUG] Artwork {len(artworks)}:")
                     for key, val in artwork.items():
@@ -263,13 +228,11 @@ def push_romanian_to_fuseki(artworks):
     g = Graph()
     g.bind("ex", EX)
     
-    # Cache for artist details to avoid repeated Wikidata queries
     artist_cache = {}
     skip_wikidata = os.getenv("SKIP_WIKIDATA", "false").lower() == "true"
     if skip_wikidata:
         print("[ROMANIAN] SKIP_WIKIDATA=true — skipping Wikidata enrichment")
     
-    # Build graph
     for idx, artwork in enumerate(artworks):
         try:
             title = str(artwork.get("title", "Unknown"))
@@ -313,7 +276,6 @@ def push_romanian_to_fuseki(artworks):
                 except Exception as e:
                     print(f"[ROMANIAN] Skipping artwork movement due to error: {str(e)[:100]}")
             
-            # Get artist details from Wikidata if not cached
             artist_details = {"birthDate": None, "birthPlace": None, "nationality": None, "movement": None}
             if not skip_wikidata:
                 if creator not in artist_cache:
@@ -321,11 +283,9 @@ def push_romanian_to_fuseki(artworks):
                     artist_cache[creator] = get_wikidata_artist_details(creator)
                 artist_details = artist_cache.get(creator, artist_details)
             
-            # Add artist triples
             g.add((artist_uri, RDF.type, EX.Artist))
             g.add((artist_uri, EX.name, Literal(creator)))
             
-            # Add Getty ULAN link for artist
             ulan_data = get_getty_enrichment(creator, "ulan")
             if ulan_data:
                 ulan_id = ulan_data.get("ulan_id", "")
@@ -333,7 +293,6 @@ def push_romanian_to_fuseki(artworks):
                     g.add((artist_uri, EX.hasULAN, URIRef(f"http://vocab.getty.edu/page/ulan/{ulan_id}")))
                     # print(f"[GETTY ULAN] {creator} -> {ulan_id}")
             
-            # Ensure all values are strings before passing to Literal
             if artist_details.get("birthDate"):
                 birth_date = str(artist_details["birthDate"]).strip()
                 if birth_date:
@@ -358,7 +317,6 @@ def push_romanian_to_fuseki(artworks):
             print(f"[ROMANIAN] Error processing artwork {idx}: {str(e)[:100]}")
             continue
     
-    # Push to Fuseki in batches using N-Triples
     print(f"[ROMANIAN] Pushing {len(g)} triples to Fuseki...")
     batch_size = 100
     batch_count = 0
@@ -394,35 +352,23 @@ def push_romanian_to_fuseki(artworks):
 
 
 def import_romanian_heritage(limit=100):
-    """Main function to import Romanian heritage data
-    
-    Args:
-        limit: Maximum number of artworks to import (default 100)
-    """
     print(f"[ROMANIAN] Starting import (limit: {limit} artworks)...")
     
-    # Download
     xml_content = download_romanian_artworks()
     if not xml_content:
         print("[ROMANIAN] Download failed, skipping import")
         return
     
-    # Parse with limit
     artworks = parse_romanian_xml(xml_content, limit=limit)
     if not artworks:
         print("[ROMANIAN] No artworks parsed")
         return
     
-    # Push to Fuseki (with Getty enrichment already included)
     push_romanian_to_fuseki(artworks)
     
     print("[ROMANIAN] Import complete!")
 
 
 def import_romanian_all(total=100):
-    """Convenient wrapper for import_romanian_heritage
-    
-    Args:
-        total: Maximum number of artworks to import (default 100)
-    """
+
     import_romanian_heritage(limit=total)
