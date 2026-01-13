@@ -440,24 +440,7 @@ def getty_statistics_api(request):
         total_results = sparql.query().convert()
         total_artworks = int(total_results["results"]["bindings"][0].get("count", {}).get("value", 0))
         
-        sparql.setQuery("""
-            PREFIX ex: <http://example.org/ontology/>
-            SELECT (COUNT(DISTINCT ?art) as ?count) WHERE {
-                ?art ex:hasAAT ?aat .
-            }
-        """)
-        aat_results = sparql.query().convert()
-        getty_aat_artworks = int(aat_results["results"]["bindings"][0].get("count", {}).get("value", 0))
-        
-        sparql.setQuery("""
-            PREFIX ex: <http://example.org/ontology/>
-            SELECT (COUNT(DISTINCT ?artist) as ?count) WHERE {
-                ?artist ex:hasULAN ?ulan .
-            }
-        """)
-        ulan_results = sparql.query().convert()
-        getty_ulan_artists = int(ulan_results["results"]["bindings"][0].get("count", {}).get("value", 0))
-        
+        # Get ALL movements and check Getty for each
         sparql.setQuery("""
             PREFIX ex: <http://example.org/ontology/>
             SELECT ?movement (COUNT(?art) as ?count) WHERE {
@@ -466,12 +449,13 @@ def getty_statistics_api(request):
             }
             GROUP BY ?movement
             ORDER BY DESC(?count)
-            LIMIT 15
         """)
         movements_results = sparql.query().convert()
         
         from .getty_enrichment import get_getty_enrichment
         top_movements = []
+        artworks_with_getty_movements = 0
+        
         for binding in movements_results["results"]["bindings"]:
             movement = binding.get("movement", {}).get("value", "")
             count = int(binding.get("count", {}).get("value", 0))
@@ -484,7 +468,12 @@ def getty_statistics_api(request):
                     "aat_url": getty_data["aat_url"],
                     "count": count
                 })
+                artworks_with_getty_movements += count
         
+        # Sort by count descending
+        top_movements.sort(key=lambda x: x["count"], reverse=True)
+        
+        # Get ALL artists and check Getty for each
         sparql.setQuery("""
             PREFIX ex: <http://example.org/ontology/>
             SELECT ?creator (COUNT(?art) as ?count) WHERE {
@@ -493,11 +482,12 @@ def getty_statistics_api(request):
             }
             GROUP BY ?creator
             ORDER BY DESC(?count)
-            LIMIT 15
         """)
         artists_results = sparql.query().convert()
         
         top_artists = []
+        artworks_with_getty_artists = 0
+        
         for binding in artists_results["results"]["bindings"]:
             artist = binding.get("creator", {}).get("value", "")
             count = int(binding.get("count", {}).get("value", 0))
@@ -510,11 +500,15 @@ def getty_statistics_api(request):
                     "ulan_url": getty_data["ulan_url"],
                     "count": count
                 })
+                artworks_with_getty_artists += count
+        
+        # Sort by count descending
+        top_artists.sort(key=lambda x: x["count"], reverse=True)
         
         return JsonResponse({
             "total_artworks": total_artworks,
-            "getty_aat_artworks": getty_aat_artworks,
-            "getty_ulan_artists": getty_ulan_artists,
+            "getty_aat_artworks": artworks_with_getty_movements,
+            "getty_ulan_artists": artworks_with_getty_artists,
             "top_getty_movements": top_movements,
             "top_getty_artists": top_artists
         })

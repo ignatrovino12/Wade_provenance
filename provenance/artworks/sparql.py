@@ -50,7 +50,7 @@ def get_paintings(limit: int = 10, total: int = 100):
                 print(f"[WIKIDATA SUCCESS] batch offset {offset} on attempt {attempt+1}")
                 break
             except (socket.timeout, urlerror.HTTPError, urlerror.URLError) as e:
-                wait_time = 1 * (attempt + 1)  # 1s, 2s, 3s, 4s, 5s
+                wait_time = 1 * (attempt + 1) 
                 print(f"[WIKIDATA RETRY {attempt+1}] {e} - waiting {wait_time}s")
                 import time
                 time.sleep(wait_time)
@@ -104,26 +104,43 @@ def get_paintings(limit: int = 10, total: int = 100):
 
     print(f"[WIKIDATA] fetched {len(item_uris)} items, {len(creator_uris)} creators")
     
-    # Fetch labels for all URIs
+    # Fetch labels for all URIs in batch
     labels = {}
-    for uri in (item_uris | creator_uris | place_uris | movement_uris | creator_movement_uris | nationality_uris):
-        try:
-            label_client = _make_wikidata_client()
-            label_client.setQuery(f"""
-                PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-                SELECT ?label WHERE {{
-                    <{uri}> rdfs:label ?label.
-                    FILTER(lang(?label) = "en")
-                }} LIMIT 1
-            """)
-            label_result = label_client.query().convert()
-            if label_result["results"]["bindings"]:
-                label_val = label_result["results"]["bindings"][0]["label"]["value"]
-                if len(label_val) < 50:
-                    labels[uri] = label_val
-
-        except Exception as e:
-            print(f"[LABEL FETCH] failed for {uri}: {e}")
+    all_uris = item_uris | creator_uris | place_uris | movement_uris | creator_movement_uris | nationality_uris
+    
+    if all_uris:
+        # Split into batches of 500 URIs to avoid query size limits
+        uri_list = list(all_uris)
+        batch_size = 500
+        
+        for batch_start in range(0, len(uri_list), batch_size):
+            batch_uris = uri_list[batch_start:batch_start + batch_size]
+            uri_values = " ".join([f"<{uri}>" for uri in batch_uris])
+            
+            try:
+                label_client = _make_wikidata_client()
+                label_client.setQuery(f"""
+                    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+                    SELECT ?uri ?label WHERE {{
+                        VALUES ?uri {{ {uri_values} }}
+                        ?uri rdfs:label ?label.
+                        FILTER(lang(?label) = "en")
+                    }}
+                """)
+                label_result = label_client.query().convert()
+                
+                for binding in label_result["results"]["bindings"]:
+                    uri = binding["uri"]["value"]
+                    label_val = binding["label"]["value"]
+                    if len(label_val) < 50 and uri not in labels:
+                        labels[uri] = label_val
+                
+                print(f"[LABEL FETCH] Batch {batch_start//batch_size + 1}: fetched {len(label_result['results']['bindings'])} labels")
+                
+            except Exception as e:
+                print(f"[LABEL FETCH] Batch failed: {e}")
+                import time
+                time.sleep(1)
     
     g = Graph()
     g.bind("ex", EX)
@@ -375,25 +392,43 @@ def get_romanian_artworks(limit: int = 10, total: int = 100):
 
     print(f"[WIKIDATA ROMANIAN] fetched {len(item_uris)} items, {len(creator_uris)} creators")
 
-    # Fetch labels
+    # Fetch labels in batch
     labels = {}
-    for uri in (item_uris | creator_uris | place_uris | movement_uris | creator_movement_uris | nationality_uris):
-        try:
-            label_client = _make_wikidata_client()
-            label_client.setQuery(f"""
-                PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-                SELECT ?label WHERE {{
-                    <{uri}> rdfs:label ?label.
-                    FILTER(lang(?label) = "en")
-                }} LIMIT 1
-            """)
-            label_result = label_client.query().convert()
-            if label_result["results"]["bindings"]:
-                label_val = label_result["results"]["bindings"][0]["label"]["value"]
-                if len(label_val) < 50:
-                    labels[uri] = label_val
-        except Exception as e:
-            pass
+    all_uris = item_uris | creator_uris | place_uris | movement_uris | creator_movement_uris | nationality_uris
+    
+    if all_uris:
+        # Split into batches of 500 URIs to avoid query size limits
+        uri_list = list(all_uris)
+        batch_size = 500
+        
+        for batch_start in range(0, len(uri_list), batch_size):
+            batch_uris = uri_list[batch_start:batch_start + batch_size]
+            uri_values = " ".join([f"<{uri}>" for uri in batch_uris])
+            
+            try:
+                label_client = _make_wikidata_client()
+                label_client.setQuery(f"""
+                    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+                    SELECT ?uri ?label WHERE {{
+                        VALUES ?uri {{ {uri_values} }}
+                        ?uri rdfs:label ?label.
+                        FILTER(lang(?label) = "en")
+                    }}
+                """)
+                label_result = label_client.query().convert()
+                
+                for binding in label_result["results"]["bindings"]:
+                    uri = binding["uri"]["value"]
+                    label_val = binding["label"]["value"]
+                    if len(label_val) < 50 and uri not in labels:
+                        labels[uri] = label_val
+                
+                print(f"[LABEL FETCH ROMANIAN] Batch {batch_start//batch_size + 1}: fetched {len(label_result['results']['bindings'])} labels")
+                
+            except Exception as e:
+                print(f"[LABEL FETCH ROMANIAN] Batch failed: {e}")
+                import time
+                time.sleep(1)
 
     data = []
     for item in all_bindings:
