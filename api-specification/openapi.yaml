@@ -1,0 +1,588 @@
+openapi: 3.0.3
+info:
+  title: Artwork Provenance System API
+  description: |
+    REST API for querying artworks from multiple sources (Wikidata, DBpedia, data.gov.ro) 
+    with enrichment from Getty vocabularies (ULAN for artists, AAT for movements), 
+    stored and queried via Apache Jena Fuseki triple store.
+    
+    **Author:** Team Machine Love (Dulhac Alexandru and Ignat Vlad-Rovin)
+  version: 1.0.0
+  contact:
+    name: Team Machine Love
+    
+servers:
+  - url: http://localhost:8000
+    description: Local development server
+
+tags:
+  - name: Artworks
+    description: Artwork collection endpoints
+  - name: Statistics
+    description: Collection statistics and analytics
+  - name: SPARQL
+    description: Direct SPARQL query endpoint
+  - name: Getty
+    description: Getty vocabulary enrichment data
+  - name: Romanian Heritage
+    description: Romanian cultural heritage collection
+
+paths:
+  /api/:
+    get:
+      tags:
+        - Artworks
+      summary: Get paginated artworks
+      description: Retrieve paginated list of artworks with enriched metadata from DBpedia
+      operationId: getArtworks
+      parameters:
+        - name: page
+          in: query
+          description: Page number (1-based)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+            example: 1
+        - name: per_page
+          in: query
+          description: Number of items per page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+            example: 20
+      responses:
+        '200':
+          description: Successful response with paginated artworks
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedArtworksResponse'
+              example:
+                items:
+                  - title: "Venus of Urbino"
+                    creators: ["Titian"]
+                    creator: "Titian"
+                    date: "1538-01-01"
+                    museums: ["Uffizi Gallery"]
+                    museum: "Uffizi Gallery"
+                    movements: ["High Renaissance", "Venetian school"]
+                    movement: "High Renaissance"
+                    creator_movements: ["High Renaissance", "Venetian school"]
+                    birth_dates: ["1490-01-01"]
+                    birth_places: ["Pieve di Cadore"]
+                    nationalities: ["Republic of Venice"]
+                    image_url: "http://commons.wikimedia.org/wiki/Special:FilePath/Tiziano%27s%20Venere%20di%20Urbino.jpg"
+                    dbpedia:
+                      birthDate: "1490-01-01"
+                      birthPlace: "Pieve di Cadore"
+                      nationality: "Republic of Venice"
+                      movement: "High Renaissance"
+                total: 97
+                page: 1
+                per_page: 20
+                total_pages: 5
+        '500':
+          description: SPARQL query failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /sparql:
+    get:
+      tags:
+        - SPARQL
+      summary: Execute SPARQL query (GET)
+      description: Execute SPARQL query against the Fuseki triple store using GET method
+      operationId: executeSparqlGet
+      parameters:
+        - name: query
+          in: query
+          description: SPARQL query string (URL-encoded)
+          required: true
+          schema:
+            type: string
+          example: "PREFIX ex: <http://example.org/ontology/> SELECT ?title WHERE { ?art ex:title ?title } LIMIT 10"
+      responses:
+        '200':
+          description: Successful SPARQL query execution
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SparqlResponse'
+        '400':
+          description: Invalid SPARQL query
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: SPARQL execution error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    
+    post:
+      tags:
+        - SPARQL
+      summary: Execute SPARQL query (POST)
+      description: |
+        Execute SPARQL query against the Fuseki triple store using POST method.
+        **Note:** Requires CSRF token for POST requests.
+      operationId: executeSparqlPost
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                query:
+                  type: string
+                  description: SPARQL query string
+              required:
+                - query
+      responses:
+        '200':
+          description: Successful SPARQL query execution
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SparqlResponse'
+        '400':
+          description: Invalid SPARQL query
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: CSRF token missing or invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: SPARQL execution error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /stats/api/:
+    get:
+      tags:
+        - Statistics
+      summary: Get collection statistics
+      description: |
+        Retrieve comprehensive statistics about the artwork collection including:
+        - Total artworks count
+        - Top creators (artists)
+        - Top museums
+        - Movement breakdown
+        - Museum collection breakdown
+      operationId: getStatistics
+      responses:
+        '200':
+          description: Successful response with statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatisticsResponse'
+              example:
+                total_artworks: 97
+                top_creators:
+                  - creator: "Johannes Vermeer"
+                    count: 5
+                  - creator: "Salvador Dalí"
+                    count: 5
+                  - creator: "Grigorescu, Nicolae"
+                    count: 4
+                top_museums:
+                  - museum: "Institutul Național al Patrimoniului"
+                    count: 40
+                  - museum: "Museo Nacional Thyssen-Bornemisza"
+                    count: 6
+                movement_breakdown:
+                  - movement: "Baroque"
+                    count: 8
+                  - movement: "Realism"
+                    count: 7
+                museum_breakdown:
+                  - museum: "Institutul Național al Patrimoniului"
+                    count: 40
+                    percentage: 41.24
+                  - museum: "Museo Nacional Thyssen-Bornemisza"
+                    count: 6
+                    percentage: 6.19
+        '500':
+          description: Statistics query failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /getty/stats/api/:
+    get:
+      tags:
+        - Getty
+      summary: Get Getty vocabulary statistics
+      description: |
+        Retrieve statistics about Getty vocabulary enrichment including:
+        - Total artworks count
+        - Getty AAT (Art & Architecture Thesaurus) coverage for movements
+        - Getty ULAN (Union List of Artist Names) coverage for artists
+        - Lists of enriched movements and artists with Getty IDs
+      operationId: getGettyStatistics
+      responses:
+        '200':
+          description: Successful response with Getty statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GettyStatisticsResponse'
+              example:
+                total_artworks: 97
+                movements_with_aat: 36
+                artists_with_ulan: 38
+                aat_percentage: 37.11
+                ulan_percentage: 39.18
+                movements:
+                  - movement: "Baroque"
+                    getty_aat_id: "300021147"
+                    count: 8
+                  - movement: "Realism"
+                    getty_aat_id: "300021389"
+                    count: 7
+                artists:
+                  - artist: "Johannes Vermeer"
+                    getty_ulan_id: "500032927"
+                    count: 5
+                  - artist: "Salvador Dalí"
+                    getty_ulan_id: "500009365"
+                    count: 5
+        '500':
+          description: Getty statistics query failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /romanian/api/:
+    get:
+      tags:
+        - Romanian Heritage
+      summary: Get Romanian heritage artworks
+      description: |
+        Retrieve artworks from Romanian cultural heritage collection sourced from data.gov.ro.
+        This collection includes artworks from the Institutul Național al Patrimoniului.
+      operationId: getRomanianHeritage
+      responses:
+        '200':
+          description: Successful response with Romanian heritage artworks
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  artworks:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Artwork'
+                  total:
+                    type: integer
+                    description: Total number of Romanian heritage artworks
+                    example: 40
+              example:
+                artworks:
+                  - title: "Portret de țărancă"
+                    creator: "Grigorescu, Nicolae"
+                    date: "1873"
+                    museum: "Institutul Național al Patrimoniului"
+                    movements: ["Realism"]
+                    heritage: true
+                    source: "data.gov.ro"
+                total: 40
+        '500':
+          description: Romanian heritage query failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    Artwork:
+      type: object
+      properties:
+        title:
+          type: string
+          description: Artwork title
+          example: "Venus of Urbino"
+        creators:
+          type: array
+          items:
+            type: string
+          description: List of creators (artists)
+          example: ["Titian"]
+        creator:
+          type: string
+          description: Primary creator name
+          example: "Titian"
+        date:
+          type: string
+          description: Creation date (ISO 8601 format)
+          example: "1538-01-01"
+        museums:
+          type: array
+          items:
+            type: string
+          description: List of museums holding the artwork
+          example: ["Uffizi Gallery"]
+        museum:
+          type: string
+          description: Primary museum name
+          example: "Uffizi Gallery"
+        movements:
+          type: array
+          items:
+            type: string
+          description: Artistic movements associated with the artwork
+          example: ["High Renaissance", "Venetian school"]
+        movement:
+          type: string
+          description: Primary artistic movement
+          example: "High Renaissance"
+        creator_movements:
+          type: array
+          items:
+            type: string
+          description: Movements associated with the creator
+          example: ["High Renaissance", "Venetian school"]
+        birth_dates:
+          type: array
+          items:
+            type: string
+          description: Artist birth dates
+          example: ["1490-01-01"]
+        birth_places:
+          type: array
+          items:
+            type: string
+          description: Artist birth places
+          example: ["Pieve di Cadore"]
+        nationalities:
+          type: array
+          items:
+            type: string
+          description: Artist nationalities
+          example: ["Republic of Venice"]
+        image_url:
+          type: string
+          format: uri
+          description: URL to artwork image
+          example: "http://commons.wikimedia.org/wiki/Special:FilePath/Tiziano%27s%20Venere%20di%20Urbino.jpg"
+        dbpedia:
+          $ref: '#/components/schemas/DBpediaEnrichment'
+        heritage:
+          type: boolean
+          description: Indicates if artwork is from Romanian heritage collection
+        source:
+          type: string
+          description: Data source (e.g., "data.gov.ro", "wikidata", "dbpedia")
+          
+    DBpediaEnrichment:
+      type: object
+      description: Enriched metadata from DBpedia
+      properties:
+        birthDate:
+          type: string
+          example: "1490-01-01"
+        birthPlace:
+          type: string
+          example: "Pieve di Cadore"
+        nationality:
+          type: string
+          example: "Republic of Venice"
+        movement:
+          type: string
+          example: "High Renaissance"
+
+    PaginatedArtworksResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Artwork'
+        total:
+          type: integer
+          description: Total number of artworks in collection
+          example: 97
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        per_page:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 5
+
+    StatisticsResponse:
+      type: object
+      properties:
+        total_artworks:
+          type: integer
+          description: Total number of artworks
+          example: 97
+        top_creators:
+          type: array
+          items:
+            type: object
+            properties:
+              creator:
+                type: string
+                example: "Johannes Vermeer"
+              count:
+                type: integer
+                example: 5
+        top_museums:
+          type: array
+          items:
+            type: object
+            properties:
+              museum:
+                type: string
+                example: "Institutul Național al Patrimoniului"
+              count:
+                type: integer
+                example: 40
+        movement_breakdown:
+          type: array
+          items:
+            type: object
+            properties:
+              movement:
+                type: string
+                example: "Baroque"
+              count:
+                type: integer
+                example: 8
+        museum_breakdown:
+          type: array
+          items:
+            type: object
+            properties:
+              museum:
+                type: string
+                example: "Institutul Național al Patrimoniului"
+              count:
+                type: integer
+                example: 40
+              percentage:
+                type: number
+                format: float
+                example: 41.24
+
+    GettyStatisticsResponse:
+      type: object
+      properties:
+        total_artworks:
+          type: integer
+          description: Total number of artworks
+          example: 97
+        movements_with_aat:
+          type: integer
+          description: Number of artworks with Getty AAT IDs for movements
+          example: 36
+        artists_with_ulan:
+          type: integer
+          description: Number of artworks with Getty ULAN IDs for artists
+          example: 38
+        aat_percentage:
+          type: number
+          format: float
+          description: Percentage of artworks with AAT coverage
+          example: 37.11
+        ulan_percentage:
+          type: number
+          format: float
+          description: Percentage of artworks with ULAN coverage
+          example: 39.18
+        movements:
+          type: array
+          items:
+            type: object
+            properties:
+              movement:
+                type: string
+                example: "Baroque"
+              getty_aat_id:
+                type: string
+                example: "300021147"
+              count:
+                type: integer
+                example: 8
+        artists:
+          type: array
+          items:
+            type: object
+            properties:
+              artist:
+                type: string
+                example: "Johannes Vermeer"
+              getty_ulan_id:
+                type: string
+                example: "500032927"
+              count:
+                type: integer
+                example: 5
+
+    SparqlResponse:
+      type: object
+      description: SPARQL query results in JSON format
+      properties:
+        head:
+          type: object
+          properties:
+            vars:
+              type: array
+              items:
+                type: string
+              example: ["title", "creator", "date"]
+        results:
+          type: object
+          properties:
+            bindings:
+              type: array
+              items:
+                type: object
+                additionalProperties:
+                  type: object
+                  properties:
+                    type:
+                      type: string
+                      example: "literal"
+                    value:
+                      type: string
+                      example: "Venus of Urbino"
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error message
+          example: "SPARQL query failed"
+        details:
+          type: string
+          description: Additional error details (optional)
