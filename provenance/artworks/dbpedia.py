@@ -60,7 +60,7 @@ def get_author_details(full_name: str):
         sparql.setQuery(f"""
         PREFIX dbo: <http://dbpedia.org/ontology/>
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-    SELECT ?abstract ?birthDate ?birthPlaceLabel ?nationalityLabel ?movementLabel WHERE {{
+    SELECT ?abstract ?birthDate ?birthPlaceLabel ?nationalityLabel ?movementLabel ?thumbnail WHERE {{
       OPTIONAL {{ <{resource_uri}> dbo:abstract ?abstract . FILTER(lang(?abstract)='en') }}
       OPTIONAL {{ <{resource_uri}> dbo:birthDate ?birthDate }}
       OPTIONAL {{ <{resource_uri}> dbo:birthPlace ?birthPlace .
@@ -69,6 +69,7 @@ def get_author_details(full_name: str):
                  ?nationality rdfs:label ?nationalityLabel . FILTER(lang(?nationalityLabel)='en') }}
       OPTIONAL {{ <{resource_uri}> dbo:movement ?movement .
                  ?movement rdfs:label ?movementLabel . FILTER(lang(?movementLabel)='en') }}
+      OPTIONAL {{ <{resource_uri}> dbo:thumbnail ?thumbnail }}
     }}
     LIMIT 1
     """)
@@ -108,6 +109,7 @@ def _extract_data(results):
         data["birthPlace"] = b.get("birthPlaceLabel", {}).get("value")
         data["nationality"] = b.get("nationalityLabel", {}).get("value")
         data["movement"] = b.get("movementLabel", {}).get("value")
+        data["image_url"] = b.get("thumbnail", {}).get("value")
     return data
 
 def _to_dict(obj):
@@ -116,7 +118,8 @@ def _to_dict(obj):
         "birthDate": obj.birthDate,
         "birthPlace": obj.birthPlace,
         "nationality": obj.nationality,
-        "movement": obj.movement
+        "movement": obj.movement,
+        "image_url": obj.image_url
     }
 
 def _empty():
@@ -125,5 +128,6 @@ def _empty():
         "birthDate": None,
         "birthPlace": None,
         "nationality": None,
-        "movement": None
+        "movement": None,
+        "image_url": None
     }

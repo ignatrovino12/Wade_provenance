@@ -183,7 +183,13 @@
                     const birthPlaces = artwork.birth_places && artwork.birth_places.length > 0 ? artwork.birth_places.join(', ') : 'N/A';
                     const nationalities = artwork.nationalities && artwork.nationalities.length > 0 ? artwork.nationalities.join(', ') : 'N/A';
                     
+                    // Add image if available
+                    const imageHtml = artwork.image_url 
+                        ? `<img src="${artwork.image_url}" alt="${title}" style="max-width: 100%; height: 200px; object-fit: cover; border-radius: 8px; margin-bottom: 10px;">` 
+                        : '';
+                    
                     card.innerHTML = `
+                        ${imageHtml}
                         <h3>${title}</h3>
                         <p><span class="label">Autor:</span> ${creators}</p>
                         <p><span class="label">An:</span> ${artwork.date || 'Nedatat'}</p>

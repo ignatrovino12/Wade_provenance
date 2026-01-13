@@ -4,7 +4,7 @@ div.innerHTML = "Se încarcă...";
 let currentPage = 1;
 let totalPages = 1;
 let totalArtworks = 0;
-const itemsPerPage = 50;
+const itemsPerPage = 20; // Redus de la 50 la 20 pentru performanță mai bună cu imagini
 
 // Helper to validate birth date
 function isValidBirthDate(dateStr) {
@@ -35,8 +35,16 @@ function renderArtworks(pageData, page) {
       ? `Naștere: ${o.dbpedia.birthDate} în ${o.dbpedia.birthPlace || 'N/A'}<br>`
       : '';
     
+    const imageHtml = o.image_url 
+      ? `<img src="${o.image_url}" alt="${o.title}" 
+             loading="lazy" 
+             style="max-width: 300px; max-height: 300px; margin: 10px 0; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.2);"
+             onerror="this.style.display='none'"><br>` 
+      : '';
+    
     return `
       <div style="margin-bottom:15px; border-bottom:1px solid #ccc; padding:5px;">
+        ${imageHtml}
         <strong>${o.title}</strong><br>
         Autor: ${o.creator}<br>
         An: ${o.date || 'N/A'}<br>

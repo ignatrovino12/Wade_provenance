@@ -28,13 +28,14 @@ def get_paintings(limit: int = 10, total: int = 100):
             PREFIX wd: <http://www.wikidata.org/entity/>
             PREFIX wdt: <http://www.wikidata.org/prop/direct/>
             PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-            SELECT ?item ?creator ?inception ?birthDate ?birthPlace ?collection ?location ?movement ?nationality ?creatorMovement WHERE {{
+            SELECT ?item ?creator ?inception ?birthDate ?birthPlace ?collection ?location ?movement ?nationality ?creatorMovement ?image WHERE {{
                 ?item wdt:P31 wd:Q3305213.
                 OPTIONAL {{ ?item wdt:P170 ?creator. }}
                 OPTIONAL {{ ?item wdt:P571 ?inception }}
                 OPTIONAL {{ ?item wdt:P195 ?collection }}
                 OPTIONAL {{ ?item wdt:P276 ?location }}
                 OPTIONAL {{ ?item wdt:P135 ?movement }}
+                OPTIONAL {{ ?item wdt:P18 ?image }}
                 OPTIONAL {{ ?creator wdt:P569 ?birthDate }}
                 OPTIONAL {{ ?creator wdt:P19 ?birthPlace }}
                 OPTIONAL {{ ?creator wdt:P27 ?nationality }}
@@ -151,6 +152,7 @@ def get_paintings(limit: int = 10, total: int = 100):
     for item in all_bindings:
         item_uri = item.get("item", {}).get("value")
         creator_uri = item.get("creator", {}).get("value")
+        image_url = item.get("image", {}).get("value")
         title = labels.get(item_uri, "Unknown")
         author = labels.get(creator_uri, "Necunoscut") if creator_uri else "Necunoscut"
         date_raw = item.get("inception", {}).get("value")
@@ -202,6 +204,9 @@ def get_paintings(limit: int = 10, total: int = 100):
         if movement:
             g.add((art_uri, EX.movement, Literal(movement, datatype=XSD.string)))
             triple_count += 1
+        if image_url:
+            g.add((art_uri, EX.image, Literal(image_url, datatype=XSD.string)))
+            triple_count += 1
         if birthDate:
             g.add((artist_uri, EX.birthDate, Literal(birthDate, datatype=XSD.string)))
             triple_count += 1
@@ -241,6 +246,7 @@ def get_paintings(limit: int = 10, total: int = 100):
             "date": date,
             "museum": museum,
             "movement": movement,
+            "image_url": image_url,
             "dbpedia": {
                 "birthDate": birthDateVal,
                 "birthPlace": birthPlaceVal,

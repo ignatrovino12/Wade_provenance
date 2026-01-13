@@ -186,6 +186,13 @@ def parse_romanian_xml(xml_content, limit=1000):
                 measure = admin_meta.find('.//lido:objectMeasurementsWrap/lido:objectMeasurements/lido:measurementSet/lido:measurementValue', ns)
                 if measure is not None and measure.text:
                     artwork["size"] = measure.text
+                
+                # Extract image URL from resourceWrap
+                resource_wrap = admin_meta.find('.//lido:resourceWrap/lido:resourceSet/lido:resourceRepresentation', ns)
+                if resource_wrap is not None:
+                    link_resource = resource_wrap.find('lido:linkResource', ns)
+                    if link_resource is not None and link_resource.text:
+                        artwork["image_url"] = link_resource.text.strip()
             
             if artwork.get("creator"):
                 if not artwork.get("title"):
@@ -259,6 +266,13 @@ def push_romanian_to_fuseki(artworks):
                 g.add((art_uri, EX.date, Literal(date)))
             if museum:
                 g.add((art_uri, EX.museum, Literal(museum)))
+            
+            # Add image URL if available
+            if artwork.get("image_url"):
+                image_url = str(artwork.get("image_url")).strip()
+                if image_url:
+                    g.add((art_uri, EX.image, Literal(image_url)))
+            
             # If movement extracted from LIDO, add it to artwork as well
             if artwork.get("movement"):
                 try:

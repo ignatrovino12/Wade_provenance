@@ -33,7 +33,7 @@ def artworks_api(request):
     sparql.setQuery(f"""
         PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
         PREFIX ex: <http://example.org/ontology/>
-        SELECT ?title ?creatorFinal ?date ?museum ?movement ?birthDate ?birthPlace ?nationality ?creatorMovement WHERE {{
+        SELECT ?title ?creatorFinal ?date ?museum ?movement ?birthDate ?birthPlace ?nationality ?creatorMovement ?image WHERE {{
             ?art rdf:type ex:Artwork .
             OPTIONAL {{ ?art ex:title ?title }}
             OPTIONAL {{ ?art ex:creator ?creator }}
@@ -45,6 +45,7 @@ def artworks_api(request):
             OPTIONAL {{ ?art ex:date ?date }}
             OPTIONAL {{ ?art ex:movement ?movement }}
             OPTIONAL {{ ?art ex:museum ?museum }}
+            OPTIONAL {{ ?art ex:image ?image }}
             BIND(COALESCE(?creator, ?creatorName, "Necunoscut") AS ?creatorFinal)
         }}
     """)
@@ -62,6 +63,7 @@ def artworks_api(request):
         birthDate = r.get("birthDate", {}).get("value")
         birthPlace = r.get("birthPlace", {}).get("value")
         nationality = r.get("nationality", {}).get("value")
+        image = r.get("image", {}).get("value")
         
         key = (title, date)
         
@@ -76,6 +78,7 @@ def artworks_api(request):
                 "birth_dates": {birthDate} if birthDate else set(),
                 "birth_places": {birthPlace} if birthPlace else set(),
                 "nationalities": {nationality} if nationality else set(),
+                "image_url": image,
             }
         else:
             item = deduped_dict[key]
@@ -93,6 +96,8 @@ def artworks_api(request):
                 item["birth_places"].add(birthPlace)
             if nationality:
                 item["nationalities"].add(nationality)
+            if image and not item.get("image_url"):
+                item["image_url"] = image
     
     deduped_list = list(deduped_dict.values())
     total = len(deduped_list)
@@ -112,6 +117,7 @@ def artworks_api(request):
             "birth_dates": sorted([bd for bd in item["birth_dates"] if bd]),
             "birth_places": sorted([bp for bp in item["birth_places"] if bp]),
             "nationalities": sorted([n for n in item["nationalities"] if n]),
+            "image_url": item.get("image_url"),
         }
         
         processed_item["museum"] = processed_item["museums"][0] if processed_item["museums"] else None
@@ -326,7 +332,7 @@ def romanian_heritage_api(request):
     sparql.setQuery("""
         PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
         PREFIX ex: <http://example.org/ontology/>
-        SELECT ?title ?creator ?date ?museum ?movement ?birthDate ?birthPlace ?nationality ?creatorMovement WHERE {
+        SELECT ?title ?creator ?date ?museum ?movement ?birthDate ?birthPlace ?nationality ?creatorMovement ?image WHERE {
             ?art rdf:type ex:Artwork .
             ?art ex:creator ?creator .
             ?art ex:heritage "true" .
@@ -335,6 +341,7 @@ def romanian_heritage_api(request):
             OPTIONAL { ?art ex:date ?date }
             OPTIONAL { ?art ex:museum ?museum }
             OPTIONAL { ?art ex:movement ?movement }
+            OPTIONAL { ?art ex:image ?image }
             OPTIONAL { ?art ex:createdBy ?artist . ?artist ex:birthDate ?birthDate }
             OPTIONAL { ?art ex:createdBy ?artist . ?artist ex:birthPlace ?birthPlace }
             OPTIONAL { ?art ex:createdBy ?artist . ?artist ex:nationality ?nationality }
@@ -355,6 +362,7 @@ def romanian_heritage_api(request):
         birthDate = r.get("birthDate", {}).get("value")
         birthPlace = r.get("birthPlace", {}).get("value")
         nationality = r.get("nationality", {}).get("value")
+        image = r.get("image", {}).get("value")
         
         key = (title, date)
         
@@ -369,6 +377,7 @@ def romanian_heritage_api(request):
                 "birth_dates": {birthDate} if birthDate else set(),
                 "birth_places": {birthPlace} if birthPlace else set(),
                 "nationalities": {nationality} if nationality else set(),
+                "image_url": image,
             }
         else:
             item = deduped_dict[key]
@@ -386,6 +395,8 @@ def romanian_heritage_api(request):
                 item["birth_places"].add(birthPlace)
             if nationality:
                 item["nationalities"].add(nationality)
+            if image and not item.get("image_url"):
+                item["image_url"] = image
     
     data = []
     for item in deduped_dict.values():
@@ -401,6 +412,7 @@ def romanian_heritage_api(request):
             "birth_dates": sorted([bd for bd in item["birth_dates"] if bd]),
             "birth_places": sorted([bp for bp in item["birth_places"] if bp]),
             "nationalities": sorted([n for n in item["nationalities"] if n]),
+            "image_url": item.get("image_url"),
         }
         
         processed_item["museum"] = processed_item["museums"][0] if processed_item["museums"] else None
@@ -473,7 +485,7 @@ def getty_statistics_api(request):
         # Sort by count descending
         top_movements.sort(key=lambda x: x["count"], reverse=True)
         
-        # Get ALL artists and check Getty for each
+        # Get ALL artists (no LIMIT) and check Getty for each
         sparql.setQuery("""
             PREFIX ex: <http://example.org/ontology/>
             SELECT ?creator (COUNT(?art) as ?count) WHERE {

@@ -7,6 +7,7 @@ class DBpediaArtist(models.Model):
     birthPlace = models.CharField(max_length=255, null=True, blank=True)
     nationality = models.CharField(max_length=255, null=True, blank=True)
     movement = models.CharField(max_length=255, null=True, blank=True)
+    image_url = models.URLField(max_length=500, null=True, blank=True)
     
     fetched_at = models.DateTimeField(auto_now_add=True)
 
@@ -19,6 +20,7 @@ class Artwork(models.Model):
     date = models.CharField(max_length=50, null=True, blank=True)
     museum = models.CharField(max_length=255, null=True, blank=True)
     movement = models.CharField(max_length=255, null=True, blank=True)
+    image_url = models.URLField(max_length=500, null=True, blank=True)
 
     def __str__(self):
         return self.title
